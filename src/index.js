@@ -66,6 +66,6 @@ export default{async fetch(request,env){
    const id=Number(url.pathname.split("/").pop()),x=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,c.email customer_email,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=? AND r.business_id=?`).bind(id,u.business_id).first();
    if(!x)return json({ok:false,error:"Brak dostępu."},403); const rr=await env.DB.prepare("SELECT * FROM responses WHERE request_id=? ORDER BY id DESC").bind(id).all(); return json({ok:true,request:x,responses:rr.results});
   }
-  return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
+  return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
  }catch(e){return json({ok:false,error:e.message},500)}
 }};
