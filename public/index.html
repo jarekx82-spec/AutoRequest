@@ -3,7 +3,17 @@
 <body><header>AutoRequest</header><main>
 <section id="publicView" class="hide"><div class="card"><h1 id="firmName">Zapytanie motoryzacyjne</h1><p>Podaj samochód i napisz czego potrzebujesz.</p>
 <form id="req"><div class="grid"><div><label>Imię *</label><input id="name" required></div><div><label>Telefon *</label><input id="phone" required></div><div><label>E-mail</label><input id="email"></div><div><label>Marka *</label><input id="brand" required></div><div><label>Model *</label><input id="model" required></div><div><label>VIN</label><input id="vin"></div><div><label>Rok</label><input id="production_year" type="number"></div><div><label>Pojemność</label><input id="engine_capacity"></div><div><label>Kod silnika</label><input id="engine_code"></div><div><label>Przebieg</label><input id="mileage" type="number"></div><div><label>Typ</label><select id="request_type"><option value="PART">Części</option><option value="SERVICE">Usługa</option></select></div><div><label>Kategoria</label><select id="category"><option>Olej</option><option>Filtry</option><option>Hamulce</option><option>Zawieszenie</option><option>Naprawa</option><option>Inne</option></select></div><div class="full"><label>Opis *</label><textarea id="description" required></textarea></div><div class="full"><button>WYŚLIJ ZAPYTANIE</button></div></div></form><div id="msg" class="msg hide"></div></div></section>
-
+<div id="clientChat" class="card hide">
+  <h3>Rozmowa z TEMOT</h3>
+  <div id="clientMessages" style="max-height:350px;overflow-y:auto;padding:10px;background:#f4f6f8;border-radius:9px;margin-bottom:10px;">
+    Brak wiadomości.
+  </div>
+  <div style="display:flex;gap:8px;">
+    <input id="clientChatInput" placeholder="Napisz wiadomość do TEMOT..." style="flex:1;">
+    <button type="button" onclick="sendClientMessage()">WYŚLIJ</button>
+  </div>
+</div>
+  
 <section id="loginView" class="hide"><div class="card"><h1>Panel firmy</h1><p>Zaloguj się jako właściciel lub pracownik.</p><form id="login"><label>E-mail</label><input id="lemail" type="email" required><br><br><label>Hasło</label><input id="lpass" type="password" required><br><br><button>ZALOGUJ</button></form><p id="lmsg"></p></div></section>
 
 <section id="setupView" class="hide"><div class="card"><h1>Pierwsze uruchomienie</h1><p>Utwórz konto właściciela TEMOT. Ten formularz działa tylko, dopóki nie istnieje żaden użytkownik firmy.</p><form id="setup"><label>E-mail właściciela</label><input id="semail" type="email" required><br><br><label>Hasło (minimum 8 znaków)</label><input id="spass" type="password" minlength="8" required><br><br><button>UTWÓRZ KONTO</button></form><p id="smsg"></p></div></section>
@@ -24,7 +34,7 @@
 const $=x=>document.getElementById(x),esc=x=>String(x??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"),show=x=>{["publicView","loginView","setupView","panelView"].forEach(i=>$(i).classList.add("hide"));$(x).classList.remove("hide")};
 const path=location.pathname;
 async function init(){if(path==="/setup"){show("setupView");return}if(path==="/panel"){let r=await fetch("/api/me");if(r.ok){let d=await r.json();openPanel(d.user)}else show("loginView");return}let slug=path.startsWith("/firma/")?path.split("/")[2]:"temot";let r=await fetch("/api/public/business/"+slug);if(!r.ok){document.body.innerHTML="<main><div class=card>Nie znaleziono firmy.</div></main>";return}let d=await r.json();window.slug=slug;$("firmName").textContent="Wyślij zapytanie do "+d.business.name;show("publicView")}
-$("req").onsubmit=async e=>{e.preventDefault();let ids=["name","phone","email","brand","model","vin","production_year","engine_capacity","engine_code","mileage","request_type","category","description"],b={slug};ids.forEach(i=>b[i]=$(i).value);let r=await fetch("/api/public/requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)}),d=await r.json();$("msg").classList.remove("hide");$("msg").textContent=d.ok?"Wysłano. Numer: "+d.request_number:"Błąd: "+d.error;if(d.ok)e.target.reset()}
+$("req").onsubmit=async e=>{e.preventDefault();let ids=["name","phone","email","brand","model","vin","production_year","engine_capacity","engine_code","mileage","request_type","category","description"],b={slug};ids.forEach(i=>b[i]=$(i).value);let r=await fetch("/api/public/requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)}),d=await r.json();$("msg").classList.remove("hide");$("msg").textContent=d.ok?"Wysłano. Numer: "+d.request_number:"Błąd: "+d.error;if(d.ok)e.target.reset()};window.currentRequestNumber=d.request_number;window.currentRequestId=d.request_id;
 $("setup").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/setup-owner",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:$("semail").value,password:$("spass").value})}),d=await r.json();$("smsg").textContent=d.ok?"Konto utworzone. Przejdź do /panel i zaloguj się.":"Błąd: "+d.error}
 $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:$("lemail").value,password:$("lpass").value})}),d=await r.json();if(d.ok){let m=await fetch("/api/me"),x=await m.json();openPanel(x.user)}else $("lmsg").textContent=d.error}
 function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs()}
