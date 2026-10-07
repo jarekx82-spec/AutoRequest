@@ -8,7 +8,18 @@
 
 <section id="setupView" class="hide"><div class="card"><h1>Pierwsze uruchomienie</h1><p>Utwórz konto właściciela TEMOT. Ten formularz działa tylko, dopóki nie istnieje żaden użytkownik firmy.</p><form id="setup"><label>E-mail właściciela</label><input id="semail" type="email" required><br><br><label>Hasło (minimum 8 znaków)</label><input id="spass" type="password" minlength="8" required><br><br><button>UTWÓRZ KONTO</button></form><p id="smsg"></p></div></section>
 
-<section id="panelView" class="hide"><div class="card"><h1 id="panelName">Panel firmy</h1><p><b>Link dla klientów:</b> <a id="clientLink"></a></p><button class="dark" onclick="loadJobs()">ODŚWIEŻ</button> <button onclick="logout()">WYLOGUJ</button><div id="jobs"></div></div><div id="jobCard" class="card hide"><h2>Zlecenie</h2><div id="job"></div><form id="answer"><div class="grid"><div><label>Cena</label><input id="price" type="number" step=".01"></div><div><label>Dostępność</label><input id="availability"></div><div><label>Termin</label><input id="appointment" type="datetime-local"></div><div class="full"><label>Wiadomość</label><textarea id="note"></textarea></div><div class="full"><button>WYŚLIJ ODPOWIEDŹ</button></div></div></form></div></section>
+<section id="panelView" class="hide"><div class="card"><h1 id="panelName">Panel firmy</h1><p><b>Link dla klientów:</b> <a id="clientLink"></a></p><button class="dark" onclick="loadJobs()">ODŚWIEŻ</button> <button onclick="logout()">WYLOGUJ</button><div id="jobs"></div></div><div id="jobCard" class="card hide"><h2>Zlecenie</h2><div id="job"></div><div class="box">
+  <h3>Rozmowa z klientem</h3>
+
+  <div id="chatMessages" style="max-height:350px;overflow-y:auto;padding:10px;background:#f4f6f8;border-radius:9px;margin-bottom:10px;">
+    Brak wiadomości.
+  </div>
+
+  <div style="display:flex;gap:8px;">
+    <input id="chatInput" placeholder="Napisz wiadomość do klienta..." style="flex:1;">
+    <button type="button" onclick="sendMessage()">WYŚLIJ</button>
+  </div>
+</div><form id="answer"><div class="grid"><div><label>Cena</label><input id="price" type="number" step=".01"></div><div><label>Dostępność</label><input id="availability"></div><div><label>Termin</label><input id="appointment" type="datetime-local"></div><div class="full"><label>Wiadomość</label><textarea id="note"></textarea></div><div class="full"><button>WYŚLIJ ODPOWIEDŹ</button></div></div></form></div></section>
 </main><script>
 const $=x=>document.getElementById(x),esc=x=>String(x??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"),show=x=>{["publicView","loginView","setupView","panelView"].forEach(i=>$(i).classList.add("hide"));$(x).classList.remove("hide")};
 const path=location.pathname;
