@@ -88,6 +88,30 @@ async function sendMessage(){
 
   box.scrollTop=box.scrollHeight;
 }
+  async function sendClientMessage(){
+  const input = $("clientChatInput");
+  const message = input.value.trim();
+
+  if(!message || !window.currentRequestId) return;
+
+  const r = await fetch("/api/public/requests/" + window.currentRequestId + "/messages", {
+    method: "POST",
+    headers: {"content-type":"application/json"},
+    body: JSON.stringify({
+      sender_type: "CUSTOMER",
+      message: message
+    })
+  });
+
+  const d = await r.json();
+
+  if(d.ok){
+    input.value = "";
+    await loadClientMessages();
+  }else{
+    alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
+  }
+}
   init();  
 </script></body></html>
 
