@@ -46,7 +46,7 @@ export default{async fetch(request,env){
    const c=await env.DB.prepare("INSERT INTO customers(name,phone,email,city) VALUES(?,?,?,?)").bind(clean(b.name),clean(b.phone),clean(b.email),clean(b.city)).run();
    const v=await env.DB.prepare(`INSERT INTO vehicles(customer_id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(c.meta.last_row_id,clean(b.brand),clean(b.model),clean(b.vin),b.production_year?Number(b.production_year):null,clean(b.engine_capacity),clean(b.engine_code),clean(b.fuel),b.power?Number(b.power):null,b.mileage?Number(b.mileage):null).run();
    const num="AR-"+new Date().getFullYear()+"-"+crypto.randomUUID().slice(0,8).toUpperCase();
-   await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,c.meta.last_row_id,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
+ const r=await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,c.meta.last_row_id,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
    return json({ok:true,request_number:num,request_id:r.meta.last_row_id},201);
   }
   if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="GET"){
