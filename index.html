@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoRequest</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;font-family:Arial;color:#17202a}header{background:#111827;color:white;padding:20px;font-size:22px;font-weight:bold}
+nav{background:white;padding:10px 20px;display:flex;gap:8px}button{border:0;border-radius:9px;padding:12px 16px;font-weight:bold;cursor:pointer}.red{background:#dc2626;color:white}.dark{background:#111827;color:white}
+main{max-width:1000px;margin:25px auto;padding:0 16px}.card{background:white;padding:24px;border-radius:15px;margin-bottom:20px;box-shadow:0 4px 15px #0000000d}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:bold;margin-bottom:5px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:8px}textarea{min-height:100px}.view{display:none}.active{display:block}
+.job{border:1px solid #ddd;padding:15px;border-radius:10px;margin:10px 0;cursor:pointer}.box{background:#f8fafc;padding:14px;border-radius:9px;margin:10px 0}.msg{display:none;padding:12px;border-radius:8px;margin-top:12px;background:#dcfce7}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+</style></head><body>
+<header>AutoRequest — panel zleceń motoryzacyjnych</header>
+<nav><button onclick="show('client')">Klient</button><button onclick="show('company')">Sklep / warsztat</button></nav>
+<main>
+<section id="client" class="view active"><div class="card"><h1>Nowe zapytanie</h1><p>Podaj samochód i napisz czego potrzebujesz.</p>
+<form id="requestForm"><div class="grid">
+<div><label>Imię *</label><input id="name" required></div><div><label>Telefon *</label><input id="phone" required></div>
+<div><label>E-mail</label><input id="email"></div><div><label>Sklep / warsztat</label><select id="business_id"></select></div>
+<div><label>Marka *</label><input id="brand" required></div><div><label>Model *</label><input id="model" required></div>
+<div><label>VIN</label><input id="vin"></div><div><label>Rok</label><input id="production_year" type="number"></div>
+<div><label>Pojemność</label><input id="engine_capacity"></div><div><label>Kod silnika</label><input id="engine_code"></div>
+<div><label>Moc KM</label><input id="power" type="number"></div><div><label>Przebieg</label><input id="mileage" type="number"></div>
+<div><label>Typ</label><select id="request_type"><option value="PART">Części</option><option value="SERVICE">Usługa</option></select></div>
+<div><label>Kategoria</label><select id="category"><option>Olej</option><option>Filtry</option><option>Hamulce</option><option>Zawieszenie</option><option>Rozrząd</option><option>Naprawa</option><option>Inne</option></select></div>
+<div><label>Numer części</label><input id="part_number"></div>
+<div class="full"><label>Opis *</label><textarea id="description" required placeholder="Np. potrzebuję oleju 5W30 i kompletu filtrów"></textarea></div>
+<div class="full"><button class="red">WYŚLIJ ZAPYTANIE</button></div></div></form><div id="message" class="msg"></div></div></section>
+
+<section id="company" class="view"><div class="card"><h1>Panel sklepu / warsztatu</h1><button class="dark" onclick="loadJobs()">ODŚWIEŻ</button><div id="jobs"></div></div>
+<div id="jobCard" class="card" style="display:none"><h2>Zlecenie</h2><div id="job"></div><h3>Odpowiedz klientowi</h3>
+<form id="answerForm"><div class="grid"><div><label>Cena</label><input id="price" type="number" step=".01"></div>
+<div><label>Dostępność</label><input id="availability" placeholder="np. od ręki"></div><div><label>Termin usługi</label><input id="appointment" type="datetime-local"></div>
+<div class="full"><label>Wiadomość</label><textarea id="note"></textarea></div><div class="full"><button class="red">WYŚLIJ ODPOWIEDŹ</button></div></div></form></div></section>
+</main>
+<script>
+const $=x=>document.getElementById(x),val=x=>$(x).value,esc=x=>String(x??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+function show(x){document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));$(x).classList.add("active");if(x==="company")loadJobs()}
+async function firms(){let r=await fetch("/api/businesses"),d=await r.json();$("business_id").innerHTML=d.businesses.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("")}
+$("requestForm").onsubmit=async e=>{e.preventDefault();let ids=["name","phone","email","business_id","brand","model","vin","production_year","engine_capacity","engine_code","power","mileage","request_type","category","part_number","description"],b={};ids.forEach(x=>b[x]=val(x));let r=await fetch("/api/requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}),d=await r.json();$("message").style.display="block";$("message").textContent=d.ok?"Zapytanie wysłane. Numer: "+d.request_number:"Błąd: "+d.error;if(d.ok)e.target.reset()}
+async function loadJobs(){let r=await fetch("/api/requests?business_id=1"),d=await r.json();$("jobs").innerHTML=d.requests.length?d.requests.map(x=>`<div class="job" onclick="openJob(${x.id})"><b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>${esc(x.brand)} ${esc(x.model)} ${esc(x.engine_code||"")}<br>${esc(x.description)}</div>`).join(""):"Brak zleceń."}
+let current=0;
+async function openJob(id){current=id;let r=await fetch("/api/requests/"+id),d=await r.json(),x=d.request;$("jobCard").style.display="block";$("job").innerHTML=`<div class="box"><b>${esc(x.request_number)}</b><br>Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone)}<br><br><b>Samochód:</b> ${esc(x.brand)} ${esc(x.model)}<br>VIN: ${esc(x.vin||"—")}<br>Rok: ${esc(x.production_year||"—")}<br>Silnik: ${esc(x.engine_capacity||"—")} ${esc(x.engine_code||"")}<br>Przebieg: ${esc(x.mileage||"—")} km<br><br><b>Zapytanie:</b><br>${esc(x.description)}</div>`+d.responses.map(a=>`<div class="box"><b>Odpowiedź:</b> ${a.price??"—"} zł<br>${esc(a.availability||"")}<br>${esc(a.note||"")}</div>`).join("")}
+$("answerForm").onsubmit=async e=>{e.preventDefault();await fetch("/api/requests/"+current+"/response",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({price:val("price"),availability:val("availability"),appointment_date:val("appointment"),note:val("note")})});openJob(current);loadJobs()}
+firms();
+</script></body></html>

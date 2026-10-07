@@ -1,0 +1,12 @@
+name = "autorequest"
+main = "src/index.js"
+compatibility_date = "2026-10-07"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "autorequest-db"
+database_id = "TU_WKLEJ_DATABASE_ID"
