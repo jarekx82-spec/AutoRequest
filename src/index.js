@@ -49,6 +49,22 @@ export default{async fetch(request,env){
    await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,c.meta.last_row_id,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
    return json({ok:true,request_number:num},201);
   }
+  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="GET"){
+ const id=Number(url.pathname.split("/")[4]);
+ const r=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC").bind(id).all();
+ return json({ok:true,messages:r.results});
+}
+  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="POST"){
+ const id=Number(url.pathname.split("/")[4]);
+ const b=await request.json();
+ if(!clean(b.message)) return json({ok:false,error:"Wiadomość jest pusta."},400);
+
+ await env.DB.prepare(
+  "INSERT INTO messages(request_id,sender_type,message) VALUES(?,'CUSTOMER',?)"
+ ).bind(id,clean(b.message)).run();
+
+ return json({ok:true},201);
+}
   if(url.pathname==="/api/company/requests"&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const r=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.business_id=? ORDER BY r.id DESC`).bind(u.business_id).all();
