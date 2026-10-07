@@ -84,6 +84,30 @@ export default{async fetch(request,env){
 
   return json({ok:true,messages:m.results});
 }
+  if(/^\/api\/company\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="POST"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const id=Number(url.pathname.split("/")[4]);
+
+  const own=await env.DB.prepare(
+    "SELECT id FROM requests WHERE id=? AND business_id=?"
+  ).bind(id,u.business_id).first();
+
+  if(!own)return json({ok:false,error:"Brak dostępu."},403);
+
+  const b=await request.json();
+  const message=clean(b.message);
+
+  if(!message)
+    return json({ok:false,error:"Wiadomość nie może być pusta."},400);
+
+  await env.DB.prepare(
+    "INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)"
+  ).bind(id,"BUSINESS",u.id,message).run();
+
+  return json({ok:true},201);
+}
   return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
  }catch(e){return json({ok:false,error:e.message},500)}
 }};
