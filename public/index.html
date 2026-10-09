@@ -37,6 +37,19 @@
     Ładowanie rozmów...
   </div>
 </div>
+    <div id="messageChat" class="hide" style="margin-top:20px;">
+  <hr>
+  <h3 id="messageChatTitle">Rozmowa</h3>
+
+  <div id="messageChatMessages" style="max-height:350px;overflow-y:auto;padding:10px;">
+    Brak wiadomości.
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:10px;">
+    <input id="messageChatInput" placeholder="Napisz wiadomość do klienta...">
+    <button type="button" onclick="sendMessageFromTab()">WYŚLIJ</button>
+  </div>
+</div>
 
 <div id="historyTab" class="hide">
   <h2>Historia zamówień</h2>
@@ -105,9 +118,62 @@ $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session
     </div>
   `).join("");
 }
-  async function openMessageThread(id){
+ async function openMessageThread(id){
   current = id;
-  await openJob(id);
+
+  const r = await fetch("/api/company/requests/" + id);
+  const d = await r.json();
+
+  if(!d.ok) return;
+
+  const x = d.request;
+
+  $("messageChatTitle").textContent =
+    x.customer_name + " — " + x.brand + " " + x.model + " — " + x.request_number;
+
+  $("messageChat").classList.remove("hide");
+
+  const mr = await fetch("/api/company/requests/" + id + "/messages");
+  const md = await mr.json();
+
+  const box = $("messageChatMessages");
+
+  if(!md.ok || !md.messages.length){
+    box.innerHTML = "Brak wiadomości.";
+    return;
+  }
+
+  box.innerHTML = md.messages.map(m => {
+    const kto = m.sender_type === "BUSINESS" ? "TEMOT" : "Klient";
+
+    return `<div style="margin:8px 0;padding:10px;background:white;border-radius:8px;">
+      <b>${kto}</b><br>
+      ${esc(m.message)}
+    </div>`;
+  }).join("");
+
+  box.scrollTop = box.scrollHeight;
+}
+  async function sendMessageFromTab(){
+  const input = $("messageChatInput");
+  const message = input.value.trim();
+
+  if(!message || !current) return;
+
+  const r = await fetch("/api/company/requests/" + current + "/messages", {
+    method: "POST",
+    headers: {"content-type":"application/json"},
+    body: JSON.stringify({message})
+  });
+
+  const d = await r.json();
+
+  if(d.ok){
+    input.value = "";
+    await openMessageThread(current);
+  }else{
+    alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
+  }
 }
 function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs()}
 async function logout(){await fetch("/api/logout",{method:"POST"});location.href="/panel"}
