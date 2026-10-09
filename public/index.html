@@ -92,6 +92,7 @@ $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session
     loadJobs();
   }
     if(tab==="messages"){
+      $("jobCard").classList.add("hide");
   loadMessageThreads();
 }
   }
