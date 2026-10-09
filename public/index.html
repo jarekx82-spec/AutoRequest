@@ -73,6 +73,7 @@ $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session
     $("jobCard").classList.add("hide");
     loadJobs();
   }
+  }
 function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs()}
 async function logout(){await fetch("/api/logout",{method:"POST"});location.href="/panel"}
 async function loadJobs(){let r=await fetch("/api/company/requests");if(r.status===401){location.href="/panel";return}let d=await r.json();$("jobs").innerHTML=d.requests.length?d.requests.map(x=>`<div class=job onclick=openJob(${x.id})><b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>${esc(x.brand)} ${esc(x.model)}<br>${esc(x.description)}</div>`).join(""):"Brak zleceń."}
