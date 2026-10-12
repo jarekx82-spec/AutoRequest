@@ -125,7 +125,7 @@ if(activeButton){
     <h2>Klienci</h2>
     ${d.customers.length
       ? d.customers.map(c => `
-          <div class="job">
+          <div class="job" onclick="openCustomer(${c.id})">
             <b>${esc(c.name)}</b><br>
             Telefon: ${esc(c.phone || "—")}<br>
             E-mail: ${esc(c.email || "—")}<br>
