@@ -43,10 +43,28 @@ export default{async fetch(request,env){
    const b=await request.json(),firm=await env.DB.prepare("SELECT id FROM businesses WHERE slug=? AND active=1").bind(clean(b.slug)).first();
    if(!firm)return json({ok:false,error:"Nie znaleziono firmy."},404);
    for(const f of ["name","phone","brand","model","description"])if(!clean(b[f]))return json({ok:false,error:"Brak pola: "+f},400);
-   const c=await env.DB.prepare("INSERT INTO customers(name,phone,email,city) VALUES(?,?,?,?)").bind(clean(b.name),clean(b.phone),clean(b.email),clean(b.city)).run();
-   const v=await env.DB.prepare(`INSERT INTO vehicles(customer_id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(c.meta.last_row_id,clean(b.brand),clean(b.model),clean(b.vin),b.production_year?Number(b.production_year):null,clean(b.engine_capacity),clean(b.engine_code),clean(b.fuel),b.power?Number(b.power):null,b.mileage?Number(b.mileage):null).run();
+  let customer=await env.DB.prepare(
+  "SELECT id FROM customers WHERE phone=? ORDER BY id ASC LIMIT 1"
+).bind(clean(b.phone)).first();
+
+let customerId;
+
+if(customer){
+  customerId=customer.id;
+
+  await env.DB.prepare(
+    "UPDATE customers SET name=?,email=?,city=? WHERE id=?"
+  ).bind(clean(b.name),clean(b.email),clean(b.city),customerId).run();
+}else{
+  const c=await env.DB.prepare(
+    "INSERT INTO customers(name,phone,email,city) VALUES(?,?,?,?)"
+  ).bind(clean(b.name),clean(b.phone),clean(b.email),clean(b.city)).run();
+
+  customerId=c.meta.last_row_id;
+}
+   const v=await env.DB.prepare(`INSERT INTO vehicles(customer_id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(customerId,clean(b.brand),clean(b.model),clean(b.vin),b.production_year?Number(b.production_year):null,clean(b.engine_capacity),clean(b.engine_code),clean(b.fuel),b.power?Number(b.power):null,b.mileage?Number(b.mileage):null).run();
    const num="AR-"+new Date().getFullYear()+"-"+crypto.randomUUID().slice(0,8).toUpperCase();
- const r=await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,c.meta.last_row_id,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
+ const r=await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,customerId,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
    return json({ok:true,request_number:num,request_id:r.meta.last_row_id},201);
   }
   if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="GET"){
