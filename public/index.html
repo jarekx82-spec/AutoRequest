@@ -136,6 +136,63 @@ if(activeButton){
     }
   `;
 }
+  async function openCustomer(id){
+  const r = await fetch("/api/company/customers/" + id);
+
+  if(r.status === 401){
+    location.href = "/panel";
+    return;
+  }
+
+  const d = await r.json();
+
+  if(!d.ok){
+    alert(d.error || "Nie udało się pobrać klienta.");
+    return;
+  }
+
+  const c = d.customer;
+
+  $("customersTab").innerHTML = `
+    <button class="dark" onclick="loadCustomers()">← WRÓĆ DO KLIENTÓW</button>
+
+    <h2>${esc(c.name)}</h2>
+
+    <div class="box">
+      <b>Telefon:</b> ${esc(c.phone || "—")}<br>
+      <b>E-mail:</b> ${esc(c.email || "—")}<br>
+      <b>Miasto:</b> ${esc(c.city || "—")}
+    </div>
+
+    <h3>Samochody</h3>
+
+    ${d.vehicles.length
+      ? d.vehicles.map(v => `
+        <div class="job">
+          <b>${esc(v.brand)} ${esc(v.model)}</b><br>
+          VIN: ${esc(v.vin || "—")}<br>
+          Rok: ${esc(v.production_year || "—")}<br>
+          Silnik: ${esc(v.engine_capacity || "—")} ${esc(v.engine_code || "")}<br>
+          Przebieg: ${esc(v.mileage || "—")} km
+        </div>
+      `).join("")
+      : "Brak samochodów."
+    }
+
+    <h3>Zapytania klienta</h3>
+
+    ${d.requests.length
+      ? d.requests.map(x => `
+        <div class="job">
+          <b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>
+          ${esc(x.brand)} ${esc(x.model)}<br>
+          ${esc(x.description)}
+        </div>
+      `).join("")
+      : "Brak zapytań."
+    }
+  `;
+}
   async function loadMessageThreads(){
   const r = await fetch("/api/company/requests");
 
