@@ -183,7 +183,7 @@ if(activeButton){
 
     ${d.requests.length
       ? d.requests.map(x => `
-        <div class="job">
+        <div class="job" onclick="showPanelTab('requests'); openJob(${x.id})">
           <b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>
           ${esc(x.brand)} ${esc(x.model)}<br>
           ${esc(x.description)}
