@@ -83,6 +83,25 @@ export default{async fetch(request,env){
 
   return json({ok:true,messages:r.results});
 }
+  if(url.pathname==="/api/company/customers" && request.method==="GET"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const r=await env.DB.prepare(`
+    SELECT DISTINCT
+      c.id,
+      c.name,
+      c.phone,
+      c.email,
+      c.city
+    FROM customers c
+    JOIN requests r ON r.customer_id=c.id
+    WHERE r.business_id=?
+    ORDER BY c.id DESC
+  `).bind(u.business_id).all();
+
+  return json({ok:true,customers:r.results});
+}
   if(url.pathname==="/api/company/requests"&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const r=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.business_id=? ORDER BY r.id DESC`).bind(u.business_id).all();
