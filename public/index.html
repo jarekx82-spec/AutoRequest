@@ -123,6 +123,7 @@ $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session
   current = id;
    $("jobCard").classList.add("hide");
    $("answer").classList.add("hide");
+   $("messageThreads").classList.add("hide");
 
   const r = await fetch("/api/company/requests/" + id);
   const d = await r.json();
