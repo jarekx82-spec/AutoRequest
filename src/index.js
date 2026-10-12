@@ -120,6 +120,47 @@ if(customer){
 
   return json({ok:true,customers:r.results});
 }
+  if(/^\/api\/company\/customers\/\d+$/.test(url.pathname) && request.method==="GET"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const id=Number(url.pathname.split("/").pop());
+
+  const customer=await env.DB.prepare(`
+    SELECT c.id,c.name,c.phone,c.email,c.city
+    FROM customers c
+    JOIN requests r ON r.customer_id=c.id
+    WHERE c.id=? AND r.business_id=?
+    LIMIT 1
+  `).bind(id,u.business_id).first();
+
+  if(!customer)return json({ok:false,error:"Nie znaleziono klienta."},404);
+
+  const vehicles=await env.DB.prepare(`
+    SELECT DISTINCT v.id,v.brand,v.model,v.vin,v.production_year,
+    v.engine_capacity,v.engine_code,v.fuel,v.power,v.mileage
+    FROM vehicles v
+    JOIN requests r ON r.vehicle_id=v.id
+    WHERE v.customer_id=? AND r.business_id=?
+    ORDER BY v.id DESC
+  `).bind(id,u.business_id).all();
+
+  const requests=await env.DB.prepare(`
+    SELECT r.id,r.request_number,r.status,r.request_type,r.category,
+    r.description,r.created_at,v.brand,v.model
+    FROM requests r
+    JOIN vehicles v ON v.id=r.vehicle_id
+    WHERE r.customer_id=? AND r.business_id=?
+    ORDER BY r.id DESC
+  `).bind(id,u.business_id).all();
+
+  return json({
+    ok:true,
+    customer,
+    vehicles:vehicles.results,
+    requests:requests.results
+  });
+}
   if(url.pathname==="/api/company/requests"&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const r=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.business_id=? ORDER BY r.id DESC`).bind(u.business_id).all();
