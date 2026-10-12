@@ -106,7 +106,36 @@ if(activeButton){
       $("jobCard").classList.add("hide");
   loadMessageThreads();
 }
+    if(tab==="customers"){
+  $("jobCard").classList.add("hide");
+  loadCustomers();
+}
   }
+  async function loadCustomers(){
+  const r = await fetch("/api/company/customers");
+
+  if(r.status === 401){
+    location.href = "/panel";
+    return;
+  }
+
+  const d = await r.json();
+
+  $("customersTab").innerHTML = `
+    <h2>Klienci</h2>
+    ${d.customers.length
+      ? d.customers.map(c => `
+          <div class="job">
+            <b>${esc(c.name)}</b><br>
+            Telefon: ${esc(c.phone || "—")}<br>
+            E-mail: ${esc(c.email || "—")}<br>
+            Miasto: ${esc(c.city || "—")}
+          </div>
+        `).join("")
+      : "Brak klientów."
+    }
+  `;
+}
   async function loadMessageThreads(){
   const r = await fetch("/api/company/requests");
 
