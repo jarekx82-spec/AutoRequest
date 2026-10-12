@@ -83,6 +83,17 @@ $("login").onsubmit=async e=>{e.preventDefault();let r=await fetch("/api/session
   ["requestsTab","messagesTab","historyTab","customersTab"].forEach(id=>{
     $(id).classList.add("hide");
   });
+    document.querySelectorAll("#panelView > .card:first-child button").forEach(btn=>{
+  btn.classList.add("dark");
+});
+
+const activeButton = document.querySelector(
+  `button[onclick="showPanelTab('${tab}')"]`
+);
+
+if(activeButton){
+  activeButton.classList.remove("dark");
+}
 
   $(tab+"Tab").classList.remove("hide");
 
