@@ -168,9 +168,9 @@ if(activeButton){
 
     ${d.vehicles.length
       ? d.vehicles.map(v => `
-        <div class="job">
+        <div class="job" onclick="openVehicle(${v.id})">
           <b>${esc(v.brand)} ${esc(v.model)}</b><br>
-          VIN: ${esc(v.vin || "—")}<br>
+                VIN: ${esc(v.vin || "—")}<br>
           Rok: ${esc(v.production_year || "—")}<br>
           Silnik: ${esc(v.engine_capacity || "—")} ${esc(v.engine_code || "")}<br>
           Przebieg: ${esc(v.mileage || "—")} km
@@ -193,6 +193,52 @@ if(activeButton){
     }
   `;
 }
+async function openVehicle(id){
+  const r = await fetch("/api/company/vehicles/" + id);
+
+  if(r.status === 401){
+    location.href = "/panel";
+    return;
+  }
+
+  const d = await r.json();
+
+  if(!d.ok){
+    alert(d.error || "Nie udało się pobrać samochodu.");
+    return;
+  }
+
+  const v = d.vehicle;
+
+  $("customersTab").innerHTML = `
+    <button class="dark" onclick="loadCustomers()">← WRÓĆ DO KLIENTÓW</button>
+
+    <h2>${esc(v.brand)} ${esc(v.model)}</h2>
+
+    <div class="box">
+      <b>VIN:</b> ${esc(v.vin || "—")}<br>
+      <b>Rok:</b> ${esc(v.production_year || "—")}<br>
+      <b>Silnik:</b> ${esc(v.engine_capacity || "—")} ${esc(v.engine_code || "")}<br>
+      <b>Paliwo:</b> ${esc(v.fuel || "—")}<br>
+      <b>Moc:</b> ${esc(v.power || "—")}<br>
+      <b>Przebieg:</b> ${v.mileage ? esc(v.mileage) + " km" : "—"}
+    </div>
+
+    <h3>Historia pojazdu</h3>
+
+    ${d.requests.length
+      ? d.requests.map(x => `
+        <div class="job" onclick="showPanelTab('requests'); openJob(${x.id})">
+          <b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>
+          ${esc(x.description || "—")}<br>
+          <small>${esc(x.created_at || "")}</small>
+        </div>
+      `).join("")
+      : "Brak historii pojazdu."
+    }
+  `;
+}  
+  
   async function loadMessageThreads(){
   const r = await fetch("/api/company/requests");
 
