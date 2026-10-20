@@ -188,12 +188,21 @@ if(customer){
     ORDER BY r.id DESC
   `).bind(id,u.business_id).all();
 
-  return json({
-    ok:true,
-    vehicle,
-    requests:requests.results
-  });
-}
+   const serviceHistory=await env.DB.prepare(`
+  SELECT
+    id,service_date,mileage,service_type,description,parts,
+    next_service_date,next_service_mileage,created_at
+  FROM service_history
+  WHERE vehicle_id=? AND business_id=?
+  ORDER BY service_date DESC,id DESC
+`).bind(id,u.business_id).all();
+
+ return json({
+  ok:true,
+  vehicle,
+  requests:requests.results,
+  serviceHistory:serviceHistory.results
+});
   
   if(url.pathname==="/api/company/requests"&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
