@@ -161,6 +161,40 @@ if(customer){
     requests:requests.results
   });
 }
+  if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const id=Number(url.pathname.split("/").pop());
+
+  const vehicle=await env.DB.prepare(`
+    SELECT DISTINCT
+      v.id,v.customer_id,v.brand,v.model,v.vin,v.production_year,
+      v.engine_capacity,v.engine_code,v.fuel,v.power,v.mileage
+    FROM vehicles v
+    JOIN requests r ON r.vehicle_id=v.id
+    WHERE v.id=? AND r.business_id=?
+    LIMIT 1
+  `).bind(id,u.business_id).first();
+
+  if(!vehicle)return json({ok:false,error:"Nie znaleziono samochodu."},404);
+
+  const requests=await env.DB.prepare(`
+    SELECT
+      r.id,r.request_number,r.status,r.request_type,r.category,
+      r.description,r.part_number,r.created_at,r.updated_at
+    FROM requests r
+    WHERE r.vehicle_id=? AND r.business_id=?
+    ORDER BY r.id DESC
+  `).bind(id,u.business_id).all();
+
+  return json({
+    ok:true,
+    vehicle,
+    requests:requests.results
+  });
+}
+  
   if(url.pathname==="/api/company/requests"&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const r=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.business_id=? ORDER BY r.id DESC`).bind(u.business_id).all();
