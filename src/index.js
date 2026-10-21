@@ -262,7 +262,7 @@ if(customer){
   ).bind(id,"BUSINESS",u.id,message).run();
 
   return json({ok:true},201);
-
+}
   return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
  }catch(e){return json({ok:false,error:e.message},500)}
 };
