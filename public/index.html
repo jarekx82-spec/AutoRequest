@@ -223,6 +223,21 @@ async function openVehicle(id){
       <b>Moc:</b> ${esc(v.power || "—")}<br>
       <b>Przebieg:</b> ${v.mileage ? esc(v.mileage) + " km" : "—"}
     </div>
+<h3>Historia serwisowa</h3>
+
+${d.serviceHistory && d.serviceHistory.length
+  ? d.serviceHistory.map(s => `
+    <div class="job">
+      <b>${esc(s.service_date || "—")} — ${esc(s.service_type || "Serwis")}</b><br>
+      Przebieg: ${s.mileage ? esc(s.mileage) + " km" : "—"}<br>
+      Opis: ${esc(s.description || "—")}<br>
+      Części: ${esc(s.parts || "—")}<br>
+      Następny serwis: ${esc(s.next_service_date || "—")}<br>
+      Następny przebieg: ${s.next_service_mileage ? esc(s.next_service_mileage) + " km" : "—"}
+    </div>
+  `).join("")
+  : "Brak historii serwisowej."
+}
 
     <h3>Historia pojazdu</h3>
 
