@@ -263,10 +263,4 @@ if(customer){
 
   return json({ok:true},201);
 }
- return env.ASSETS.fetch(
-    new Request(new URL("/index.html", request.url), request)
-  );
- } catch(e) {
-  return json({ok:false,error:e.message},500);
- }
-}};
+ return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
