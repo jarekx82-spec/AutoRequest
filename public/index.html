@@ -225,6 +225,7 @@ if(activeButton){
 }
   async function openRequestFromCustomer(id){
   showPanelTab('requests');
+    await new Promise(resolve => setTimeout(resolve, 100));
   await openJob(id);
 }
 async function openVehicle(id){
