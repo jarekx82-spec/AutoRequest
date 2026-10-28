@@ -9,6 +9,25 @@ async function auth(req,env){
  JOIN business_users u ON u.id=s.user_id JOIN businesses b ON b.id=u.business_id
  WHERE s.token=? AND s.expires_at>datetime('now') AND u.active=1 AND b.active=1`).bind(t).first();
 }
+async function customerAuth(req,env){
+  const t=cookie(req,"ar_customer_session");
+  if(!t)return null;
+
+  return await env.DB.prepare(`
+    SELECT
+      cu.id AS user_id,
+      cu.customer_id,
+      cu.email,
+      cu.phone,
+      c.name
+    FROM customer_sessions cs
+    JOIN customer_users cu ON cu.id=cs.user_id
+    JOIN customers c ON c.id=cu.customer_id
+    WHERE cs.token=?
+      AND cs.expires_at>datetime('now')
+      AND cu.active=1
+  `).bind(t).first();
+}
 export default{async fetch(request,env){
  const url=new URL(request.url);
  try{
