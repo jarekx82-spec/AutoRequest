@@ -224,8 +224,11 @@ if(activeButton){
   `;
 }
   async function openRequestFromCustomer(id){
-  showPanelTab('requests');
-    await new Promise(resolve => setTimeout(resolve, 100));
+  ["requestsTab","messagesTab","historyTab","customersTab"].forEach(tabId=>{
+    $(tabId).classList.add("hide");
+  });
+
+  $("requestsTab").classList.remove("hide");
   await openJob(id);
 }
 async function openVehicle(id){
