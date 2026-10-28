@@ -49,6 +49,49 @@ export default{async fetch(request,env){
    await env.DB.prepare("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)").bind(token,u.id,exp).run();
    return json({ok:true},200,{"Set-Cookie":`ar_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`});
   }
+  if(url.pathname==="/api/customer/session" && request.method==="POST"){
+  const b=await request.json();
+
+  const login=clean(b.login).toLowerCase();
+  const password=String(b.password||"");
+
+  if(!login || !password){
+    return json({ok:false,error:"Podaj telefon lub e-mail oraz hasło."},400);
+  }
+
+  const u=await env.DB.prepare(`
+    SELECT *
+    FROM customer_users
+    WHERE active=1
+      AND (LOWER(email)=? OR phone=?)
+    LIMIT 1
+  `).bind(login,login).first();
+
+  if(!u){
+    return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
+  }
+
+  const [salt,stored]=u.password_hash.split("$");
+  const calc=await hashPassword(password,salt);
+
+  if(calc!==stored){
+    return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
+  }
+
+  const token=crypto.randomUUID()+crypto.randomUUID();
+  const exp=new Date(Date.now()+7*864e5).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_sessions(token,user_id,expires_at)
+    VALUES(?,?,?)
+  `).bind(token,u.id,exp).run();
+
+  return json(
+    {ok:true},
+    200,
+    {"Set-Cookie":`ar_customer_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`}
+  );
+}
   if(url.pathname==="/api/logout"&&request.method==="POST"){
    const t=cookie(request,"ar_session"); if(t)await env.DB.prepare("DELETE FROM sessions WHERE token=?").bind(t).run();
    return json({ok:true},200,{"Set-Cookie":"ar_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
