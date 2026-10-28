@@ -213,7 +213,7 @@ if(activeButton){
 
     ${d.requests.length
       ? d.requests.map(x => `
-        <div class="job" onclick="showPanelTab('requests'); openJob(${x.id})">
+        <div class="job" onclick="openRequestFromCustomer(${x.id})">
           <b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>
           ${esc(x.brand)} ${esc(x.model)}<br>
           ${esc(x.description)}
@@ -222,6 +222,10 @@ if(activeButton){
       : "Brak zapytań."
     }
   `;
+}
+  async function openRequestFromCustomer(id){
+  showPanelTab('requests');
+  await openJob(id);
 }
 async function openVehicle(id){
   const r = await fetch("/api/company/vehicles/" + id);
