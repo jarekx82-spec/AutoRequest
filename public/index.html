@@ -492,6 +492,36 @@ async function sendMessage(){
     alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
   }
 }
+  async function customerLogin(){
+  const login = $("customerLogin").value.trim();
+  const password = $("customerPassword").value;
+  const msg = $("customerLoginMsg");
+
+  msg.textContent = "";
+
+  if(!login || !password){
+    msg.textContent = "Podaj telefon lub e-mail oraz hasło.";
+    return;
+  }
+
+  const r = await fetch("/api/customer/session", {
+    method: "POST",
+    headers: {"content-type":"application/json"},
+    body: JSON.stringify({
+      login: login,
+      password: password
+    })
+  });
+
+  const d = await r.json();
+
+  if(!d.ok){
+    msg.textContent = d.error || "Nie udało się zalogować.";
+    return;
+  }
+
+  location.href = "/klient";
+}
   init();  
 </script></body></html>
 
