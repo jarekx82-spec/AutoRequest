@@ -109,6 +109,27 @@ async function init(){
 
     return;
   }
+  if(path==="/klient"){
+  const r=await fetch("/api/customer/me");
+
+  if(r.ok){
+    const d=await r.json();
+
+    if(d.ok && d.user){
+      if(typeof openCustomerPanel==="function"){
+        openCustomerPanel(d.user);
+      }else{
+        show("customerLoginView");
+      }
+    }else{
+      show("customerLoginView");
+    }
+  }else{
+    show("customerLoginView");
+  }
+
+  return;
+}
 
   const slug=path.split("/").pop();
 
