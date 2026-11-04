@@ -49,6 +49,90 @@ export default{async fetch(request,env){
    await env.DB.prepare("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)").bind(token,u.id,exp).run();
    return json({ok:true},200,{"Set-Cookie":`ar_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`});
   }
+  if(url.pathname==="/api/customer/register" && request.method==="POST"){
+  const b = await request.json();
+
+  const name = clean(b.name);
+  const phone = clean(b.phone);
+  const email = clean(b.email).toLowerCase();
+  const password = String(b.password || "");
+
+  if(!name || !phone || !email || !password){
+    return json({
+      ok:false,
+      error:"Uzupełnij wszystkie pola."
+    },400);
+  }
+
+  if(password.length < 8){
+    return json({
+      ok:false,
+      error:"Hasło musi mieć minimum 8 znaków."
+    },400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM customer_users
+    WHERE LOWER(email)=? OR phone=?
+    LIMIT 1
+  `).bind(email,phone).first();
+
+  if(existing){
+    return json({
+      ok:false,
+      error:"Konto z tym e-mailem lub numerem telefonu już istnieje."
+    },409);
+  }
+
+  let customer = await env.DB.prepare(`
+    SELECT id
+    FROM customers
+    WHERE phone=? OR LOWER(email)=?
+    ORDER BY id ASC
+    LIMIT 1
+  `).bind(phone,email).first();
+
+  let customerId;
+
+  if(customer){
+    customerId = customer.id;
+
+    await env.DB.prepare(`
+      UPDATE customers
+      SET name=?, phone=?, email=?
+      WHERE id=?
+    `).bind(name,phone,email,customerId).run();
+
+  }else{
+    const c = await env.DB.prepare(`
+      INSERT INTO customers(name,phone,email)
+      VALUES(?,?,?)
+    `).bind(name,phone,email).run();
+
+    customerId = c.meta.last_row_id;
+  }
+
+  const salt = crypto.randomUUID();
+  const hash = await hashPassword(password,salt);
+  const passwordHash = salt + "$" + hash;
+
+  await env.DB.prepare(`
+    INSERT INTO customer_users
+      (customer_id,email,phone,password_hash,active)
+    VALUES(?,?,?,?,1)
+  `).bind(
+    customerId,
+    email,
+    phone,
+    passwordHash
+  ).run();
+
+  return json({
+    ok:true,
+    customer_id:customerId
+  },201);
+}
   if(url.pathname==="/api/customer/session" && request.method==="POST"){
   const b=await request.json();
 
