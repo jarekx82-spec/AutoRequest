@@ -92,6 +92,27 @@ export default{async fetch(request,env){
     {"Set-Cookie":`ar_customer_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`}
   );
 }
+  if(url.pathname==="/api/customer/me" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+
+  if(!u){
+    return json({
+      ok:false,
+      error:"Brak autoryzacji."
+    },401);
+  }
+
+  return json({
+    ok:true,
+    user:{
+      id:u.user_id,
+      customer_id:u.customer_id,
+      email:u.email,
+      phone:u.phone,
+      name:u.name
+    }
+  });
+}
   if(url.pathname==="/api/logout"&&request.method==="POST"){
    const t=cookie(request,"ar_session"); if(t)await env.DB.prepare("DELETE FROM sessions WHERE token=?").bind(t).run();
    return json({ok:true},200,{"Set-Cookie":"ar_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
