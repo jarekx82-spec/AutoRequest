@@ -25,8 +25,39 @@
     <input id="customerPassword" type="password" placeholder="Hasło">
 
     <button type="button" onclick="customerLogin()">ZALOGUJ SIĘ</button>
-
+<button type="button" class="dark" onclick="showCustomerRegister()">
+  NIE MASZ KONTA? ZAREJESTRUJ SIĘ
+</button>
     <p id="customerLoginMsg"></p>
+  </div>
+</section>
+  <section id="customerRegisterView" class="hide">
+  <div class="card">
+    <h1>Rejestracja klienta</h1>
+    <p>Utwórz konto, aby mieć dostęp do swoich samochodów, zapytań i historii.</p>
+
+    <label>Imię *</label>
+    <input id="registerName" type="text" placeholder="Imię">
+
+    <label>Telefon *</label>
+    <input id="registerPhone" type="text" placeholder="Numer telefonu">
+
+    <label>E-mail *</label>
+    <input id="registerEmail" type="email" placeholder="E-mail">
+
+    <label>Hasło *</label>
+    <input id="registerPassword" type="password" placeholder="Hasło">
+
+    <label>Powtórz hasło *</label>
+    <input id="registerPassword2" type="password" placeholder="Powtórz hasło">
+
+    <button type="button" onclick="customerRegister()">ZAREJESTRUJ SIĘ</button>
+
+    <button type="button" class="dark" onclick="showCustomerLogin()">
+      MAM JUŻ KONTO — ZALOGUJ SIĘ
+    </button>
+
+    <p id="customerRegisterMsg"></p>
   </div>
 </section>
 <section id="loginView" class="hide"><div class="card"><h1>Panel firmy</h1><p>Zaloguj się jako właściciel lub pracownik.</p><form id="login"><label>E-mail</label><input id="lemail" type="email" required><br><br><label>Hasło</label><input id="lpass" type="password" required><br><br><button>ZALOGUJ</button></form><p id="lmsg"></p></div></section>
@@ -513,6 +544,71 @@ async function sendMessage(){
     alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
   }
 }
+function showCustomerRegister(){
+  $("customerLoginView").classList.add("hide");
+  $("customerRegisterView").classList.remove("hide");
+  $("customerRegisterMsg").textContent="";
+}
+
+function showCustomerLogin(){
+  $("customerRegisterView").classList.add("hide");
+  $("customerLoginView").classList.remove("hide");
+  $("customerLoginMsg").textContent="";
+}
+
+  async function customerRegister(){
+  const name = $("registerName").value.trim();
+  const phone = $("registerPhone").value.trim();
+  const email = $("registerEmail").value.trim().toLowerCase();
+  const password = $("registerPassword").value;
+  const password2 = $("registerPassword2").value;
+  const msg = $("customerRegisterMsg");
+
+  msg.textContent = "";
+
+  if(!name || !phone || !email || !password || !password2){
+    msg.textContent = "Uzupełnij wszystkie pola.";
+    return;
+  }
+
+  if(password !== password2){
+    msg.textContent = "Hasła nie są takie same.";
+    return;
+  }
+
+  if(password.length < 8){
+    msg.textContent = "Hasło musi mieć minimum 8 znaków.";
+    return;
+  }
+
+  const r = await fetch("/api/customer/register", {
+    method: "POST",
+    headers: {"content-type":"application/json"},
+    body: JSON.stringify({
+      name,
+      phone,
+      email,
+      password
+    })
+  });
+
+  const d = await r.json();
+
+  if(!d.ok){
+    msg.textContent = d.error || "Nie udało się utworzyć konta.";
+    return;
+  }
+
+  msg.textContent = "Konto zostało utworzone. Możesz się zalogować.";
+
+  $("customerLogin").value = email;
+  $("customerPassword").value = "";
+
+  setTimeout(() => {
+    showCustomerLogin();
+  }, 1200);
+}
+  
   async function customerLogin(){
   const login = $("customerLogin").value.trim();
   const password = $("customerPassword").value;
