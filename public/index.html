@@ -69,12 +69,66 @@
       </div>
       <button type="button" class="dark" onclick="customerLogout()">WYLOGUJ</button>
     </div>
-    <div class="grid">
-      <div class="box"><h3>Moje samochody</h3><p>Lista samochodów przypisanych do Twojego konta.</p></div>
-      <div class="box"><h3>Moje zapytania</h3><p>W tym miejscu będą widoczne Twoje zapytania i odpowiedzi firm.</p></div>
-      <div class="box"><h3>Historia pojazdu</h3><p>Historia części, napraw i wykonanych usług.</p></div>
-      <div class="box"><h3>Przypomnienia</h3><p>Przyszłe terminy wymiany oleju i kolejnych serwisów.</p></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
+      <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
+      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
     </div>
+
+    <div id="customerCarsSection">
+      <div class="box">
+        <h2>Moje samochody</h2>
+        <div id="customerCarsList">Ładowanie samochodów...</div>
+      </div>
+
+      <div class="box">
+        <h3>Dodaj samochód</h3>
+        <form id="customerCarForm">
+          <div class="grid">
+            <div><label>Marka *</label><input id="carBrand" required></div>
+            <div><label>Model *</label><input id="carModel" required></div>
+            <div><label>VIN</label><input id="carVin"></div>
+            <div><label>Rok produkcji</label><input id="carYear" type="number"></div>
+            <div><label>Pojemność silnika</label><input id="carCapacity"></div>
+            <div><label>Kod silnika</label><input id="carEngineCode"></div>
+            <div><label>Paliwo</label><select id="carFuel"><option value="">— wybierz —</option><option>Benzyna</option><option>Diesel</option><option>LPG</option><option>Hybryda</option><option>Elektryczny</option><option>Inne</option></select></div>
+            <div><label>Moc</label><input id="carPower" placeholder="np. 177 KM"></div>
+            <div><label>Przebieg</label><input id="carMileage" type="number"></div>
+            <div class="full"><button type="submit">DODAJ SAMOCHÓD</button></div>
+          </div>
+        </form>
+        <p id="customerCarMsg"></p>
+      </div>
+    </div>
+
+    <div id="customerRequestSection" class="hide">
+      <div class="box">
+        <h2>Nowe zapytanie o towar</h2>
+        <p>Wybierz samochód ze swojej listy i opisz, jakiej części potrzebujesz.</p>
+        <form id="customerRequestForm">
+          <label>Samochód *</label>
+          <select id="customerRequestVehicle" required></select>
+
+          <label>Kategoria</label>
+          <select id="customerRequestCategory">
+            <option value="OTHER">Inne</option>
+            <option value="OIL">Olej</option>
+            <option value="FILTERS">Filtry</option>
+            <option value="BRAKES">Hamulce</option>
+            <option value="SUSPENSION">Zawieszenie</option>
+          </select>
+
+          <label>Numer części (jeśli znasz)</label>
+          <input id="customerRequestPartNumber">
+
+          <label>Jakiej części potrzebujesz? *</label>
+          <textarea id="customerRequestDescription" required placeholder="Np. komplet klocków hamulcowych przód"></textarea>
+
+          <button type="submit">WYŚLIJ ZAPYTANIE</button>
+        </form>
+        <p id="customerRequestMsg"></p>
+      </div>
+    </div>
+
     <div id="customerPanelStatus" class="box">Konto klienta jest aktywne.</div>
   </div>
 </section>
@@ -569,6 +623,43 @@ function openCustomerPanel(user){
     ? (user.name || user.email || user.phone)
     : "Klient";
   $("customerPanelName").textContent = "Witaj, " + name + ".";
+  loadCustomerCars();
+}
+
+function showCustomerSection(section){
+  $("customerCarsSection").classList.toggle("hide", section !== "cars");
+  $("customerRequestSection").classList.toggle("hide", section !== "request");
+  if(section === "cars") loadCustomerCars();
+  if(section === "request") loadCustomerCars();
+}
+
+async function loadCustomerCars(){
+  const r = await fetch("/api/customer/vehicles");
+  if(r.status === 401){ location.href="/klient"; return; }
+  const d = await r.json();
+  if(!d.ok){
+    $("customerCarsList").textContent = d.error || "Nie udało się pobrać samochodów.";
+    return;
+  }
+
+  const cars = d.vehicles || [];
+  $("customerCarsList").innerHTML = cars.length ? cars.map(v => `
+    <div class="job" style="cursor:default">
+      <b>${esc(v.brand)} ${esc(v.model)}</b><br>
+      VIN: ${esc(v.vin || "—")}<br>
+      Rok: ${esc(v.production_year || "—")}<br>
+      Silnik: ${esc(v.engine_capacity || "—")} ${esc(v.engine_code || "")}<br>
+      Paliwo: ${esc(v.fuel || "—")}<br>
+      Moc: ${esc(v.power || "—")}<br>
+      Przebieg: ${v.mileage ? esc(v.mileage)+" km" : "—"}
+    </div>`).join("") : "Nie masz jeszcze dodanych samochodów.";
+
+  const select = $("customerRequestVehicle");
+  select.innerHTML = cars.length
+    ? '<option value="">— wybierz samochód —</option>' + cars.map(v =>
+        `<option value="${v.id}">${esc(v.brand)} ${esc(v.model)}${v.engine_code ? " — "+esc(v.engine_code) : ""}${v.vin ? " — VIN "+esc(v.vin) : ""}</option>`
+      ).join("")
+    : '<option value="">Najpierw dodaj samochód</option>';
 }
 
 async function customerLogout(){
@@ -577,6 +668,55 @@ async function customerLogout(){
   }catch(e){}
   location.href = "/klient";
 }
+
+$("customerCarForm").onsubmit = async e => {
+  e.preventDefault();
+  const body = {
+    brand: $("carBrand").value.trim(),
+    model: $("carModel").value.trim(),
+    vin: $("carVin").value.trim(),
+    production_year: $("carYear").value,
+    engine_capacity: $("carCapacity").value.trim(),
+    engine_code: $("carEngineCode").value.trim(),
+    fuel: $("carFuel").value,
+    power: $("carPower").value.trim(),
+    mileage: $("carMileage").value
+  };
+  const r = await fetch("/api/customer/vehicles", {
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  const d = await r.json();
+  $("customerCarMsg").textContent = d.ok ? "Samochód został dodany." : (d.error || "Nie udało się dodać samochodu.");
+  if(d.ok){ e.target.reset(); await loadCustomerCars(); }
+};
+
+$("customerRequestForm").onsubmit = async e => {
+  e.preventDefault();
+  const vehicle_id = Number($("customerRequestVehicle").value);
+  if(!vehicle_id){
+    $("customerRequestMsg").textContent = "Najpierw wybierz samochód.";
+    return;
+  }
+  const r = await fetch("/api/customer/requests", {
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+      vehicle_id,
+      request_type:"PART",
+      category:$("customerRequestCategory").value,
+      part_number:$("customerRequestPartNumber").value.trim(),
+      description:$("customerRequestDescription").value.trim(),
+      business_slug:"temot"
+    })
+  });
+  const d = await r.json();
+  $("customerRequestMsg").textContent = d.ok
+    ? "Zapytanie wysłane. Numer: " + d.request_number
+    : (d.error || "Nie udało się wysłać zapytania.");
+  if(d.ok) e.target.reset();
+};
 
 function showCustomerRegister(){
   $("customerLoginView").classList.add("hide");
