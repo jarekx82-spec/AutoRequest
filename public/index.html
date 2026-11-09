@@ -217,7 +217,7 @@
     <input id="chatInput" placeholder="Napisz wiadomość do klienta..." style="flex:1;">
     <button type="button" onclick="sendMessage()">WYŚLIJ</button>
   </div>
-</div><form id="answer"><div class="grid"><div><label>Cena</label><input id="price" type="number" step=".01"></div><div><label>Dostępność</label><input id="availability"></div><div><label>Termin</label><input id="appointment" type="datetime-local"></div><div class="full"><label>Wiadomość</label><textarea id="note"></textarea></div><div class="full"><button>WYŚLIJ ODPOWIEDŹ</button></div></div></form></div></section>
+</div><form id="answer"><div class="grid"><div><label>Cena całkowita</label><input id="price" type="number" step=".01"></div><div><label>Dostępność</label><input id="availability"></div><div><label>Termin</label><input id="appointment" type="datetime-local"></div><div class="full"><label>Pozycje części</label><div id="offerItemsEditor"></div><button type="button" class="dark" onclick="addOfferItemRow()">+ DODAJ CZĘŚĆ</button></div><div class="full"><label>Wiadomość</label><textarea id="note"></textarea></div><div class="full"><button>WYŚLIJ ODPOWIEDŹ</button></div></div></form></div></section>
 </main><script>
 const $=x=>document.getElementById(x),esc=x=>String(x??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"),show=x=>{["publicView","clientChat","customerLoginView","customerRegisterView","customerPanelView","loginView","setupView","panelView"].forEach(i=>{if($(i))$(i).classList.add("hide")});if($(x))$(x).classList.remove("hide")};
 const path=location.pathname;
@@ -317,9 +317,19 @@ async function loadCompanyOrders(){
       Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone||"—")}<br>
       Samochód: ${esc(x.brand)} ${esc(x.model)}<br>
       ${esc(x.description||"")}<br>
-      Cena: ${x.price==null?"—":Number(x.price).toFixed(2)+" zł"}<br>
+      Cena: ${x.price==null?"—":Number(x.price).toFixed(2)+" zł"}<br><div id="companyOrderItems_${x.id}"><b>Części:</b> ładowanie...</div>
       ${x.status==="CONFIRMED"?`<button type="button" onclick="completeOrder(${x.id})">OZNACZ JAKO ZREALIZOWANE</button>`:""}
     </div>`).join(""):"Brak potwierdzonych lub zrealizowanych zamówień.";
+  for(const x of d.orders){
+    const rr=await fetch("/api/company/orders/"+x.id+"/items");
+    const dd=await rr.json();
+    const target=$("companyOrderItems_"+x.id);
+    if(target && dd.ok){
+      target.innerHTML="<b>Części:</b><br>"+(dd.items.length?dd.items.map(i=>
+        `${esc(i.part_name)}${i.part_number?" — "+esc(i.part_number):""} × ${i.quantity}${i.unit_price==null?"":" — "+Number(i.unit_price).toFixed(2)+" zł/szt."}`
+      ).join("<br>"):"Brak pozycji.");
+    }
+  }
 }
 async function completeOrder(id){
   if(!confirm("Oznaczyć zamówienie jako zrealizowane?"))return;
@@ -567,7 +577,31 @@ ${d.serviceHistory && d.serviceHistory.length
 function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs()}
 async function logout(){await fetch("/api/logout",{method:"POST"});location.href="/panel"}
 async function loadJobs(){let r=await fetch("/api/company/requests");if(r.status===401){location.href="/panel";return}let d=await r.json();$("jobs").innerHTML=d.requests.length?d.requests.filter(x=>x.status==="NEW").map(x=>`<div class=job onclick=openJob(${x.id})><b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>${esc(x.brand)} ${esc(x.model)}<br>${esc(x.description)}</div>`).join(""):"Brak zleceń."}
-let current=0;async function openJob(id){current=id;$("requestChat").classList.add("hide");$("messageChat").classList.add("hide");let r=await fetch("/api/company/requests/"+id),d=await r.json(),x=d.request;$("jobCard").classList.remove("hide");$("job").innerHTML=`<div class=box><b>${esc(x.request_number)}</b><br>Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone)}<br><br><b>Samochód:</b> ${esc(x.brand)} ${esc(x.model)}<br>VIN: ${esc(x.vin||"—")}<br>Rok: ${esc(x.production_year||"—")}<br>Silnik: ${esc(x.engine_capacity||"—")} ${esc(x.engine_code||"")}<br>Przebieg: ${esc(x.mileage||"—")} km<br><br><b>Zapytanie:</b><br>${esc(x.description)}</div>`;$("answer").classList.remove("hide");}
+let current=0;async function openJob(id){current=id;$("requestChat").classList.add("hide");$("messageChat").classList.add("hide");let r=await fetch("/api/company/requests/"+id),d=await r.json(),x=d.request;$("jobCard").classList.remove("hide");$("job").innerHTML=`<div class=box><b>${esc(x.request_number)}</b><br>Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone)}<br><br><b>Samochód:</b> ${esc(x.brand)} ${esc(x.model)}<br>VIN: ${esc(x.vin||"—")}<br>Rok: ${esc(x.production_year||"—")}<br>Silnik: ${esc(x.engine_capacity||"—")} ${esc(x.engine_code||"")}<br>Przebieg: ${esc(x.mileage||"—")} km<br><br><b>Zapytanie:</b><br>${esc(x.description)}</div>`;$("answer").classList.remove("hide");$("offerItemsEditor").innerHTML="";addOfferItemRow();}
+function addOfferItemRow(data={}){
+  const host=$("offerItemsEditor");
+  if(!host)return;
+  const row=document.createElement("div");
+  row.className="box offerItemRow";
+  row.style.marginBottom="8px";
+  row.innerHTML=`<div class="grid">
+    <div><label>Nazwa części</label><input class="itemPartName" value="${esc(data.part_name||"")}" placeholder="np. Klocki hamulcowe"></div>
+    <div><label>Indeks / numer części</label><input class="itemPartNumber" value="${esc(data.part_number||"")}" placeholder="np. GDB1330"></div>
+    <div><label>Ilość</label><input class="itemQuantity" type="number" min="1" step="1" value="${esc(data.quantity||1)}"></div>
+    <div><label>Cena za szt.</label><input class="itemUnitPrice" type="number" min="0" step=".01" value="${esc(data.unit_price??"")}"></div>
+    <div class="full"><button type="button" class="dark" onclick="this.closest('.offerItemRow').remove()">USUŃ POZYCJĘ</button></div>
+  </div>`;
+  host.appendChild(row);
+}
+function getOfferItems(){
+  return [...document.querySelectorAll("#offerItemsEditor .offerItemRow")].map(row=>({
+    part_name:row.querySelector(".itemPartName").value.trim(),
+    part_number:row.querySelector(".itemPartNumber").value.trim(),
+    quantity:row.querySelector(".itemQuantity").value||1,
+    unit_price:row.querySelector(".itemUnitPrice").value
+  })).filter(x=>x.part_name);
+}
+
 $("answer").onsubmit=async e=>{
   e.preventDefault();
 
@@ -578,7 +612,8 @@ $("answer").onsubmit=async e=>{
       price:$("price").value,
       availability:$("availability").value,
       appointment_date:$("appointment").value,
-      note:$("note").value
+      note:$("note").value,
+      items:getOfferItems()
     })
   });
 
@@ -586,6 +621,8 @@ $("answer").onsubmit=async e=>{
 
   if(d.ok){
     e.target.reset();
+    $("offerItemsEditor").innerHTML="";
+    addOfferItemRow();
     $("jobCard").classList.add("hide");
     await loadJobs();
     alert("Odpowiedź została wysłana.");
@@ -694,7 +731,7 @@ async function loadCustomerRequests(){
 async function openCustomerConversation(id,num){
   customerConversationRequestId=id;
   $("customerRequestsList").classList.add("hide"); $("customerConversation").classList.remove("hide");
-  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages(); await loadCustomerOffer();
+  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages(); await loadCustomerOffer(); await loadCustomerOfferItems();
 }
 function closeCustomerConversation(){ customerConversationRequestId=0; $("customerConversation").classList.add("hide"); $("customerRequestsList").classList.remove("hide"); }
 async function loadCustomerConversationMessages(){
@@ -721,6 +758,7 @@ async function loadCustomerOffer(){
   const price=(o.price===null||o.price===undefined)?"—":Number(o.price).toFixed(2)+" zł";
   box.innerHTML=`
     <h3>Oferta firmy</h3>
+    <div id="customerOfferItems"></div>
     <b>Cena:</b> ${esc(price)}<br>
     <b>Dostępność:</b> ${esc(o.availability||"—")}<br>
     <b>Termin:</b> ${esc(o.appointment_date||"—")}<br>
@@ -732,6 +770,20 @@ async function loadCustomerOffer(){
       </div>`:
       `<p><b>Status:</b> ${esc(x.status)}</p>`}
   `;
+  await loadCustomerOfferItems();
+}
+
+async function loadCustomerOfferItems(){
+  if(!customerConversationRequestId)return;
+  const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/items");
+  const d=await r.json();
+  const el=$("customerOfferItems");
+  if(!el || !d.ok)return;
+  el.innerHTML=d.items.length?`
+    <div style="margin-bottom:12px">
+      <b>Oferowane części:</b>
+      ${d.items.map(x=>`<div>${esc(x.part_name)}${x.part_number?" — "+esc(x.part_number):""} × ${x.quantity}${x.unit_price==null?"":" — "+Number(x.unit_price).toFixed(2)+" zł/szt."}</div>`).join("")}
+    </div>`:"";
 }
 async function customerDecision(decision){
   if(!customerConversationRequestId)return;
@@ -742,7 +794,7 @@ async function customerDecision(decision){
   });
   const d=await r.json();
   if(!d.ok){alert(d.error||"Nie udało się zapisać decyzji.");return;}
-  await loadCustomerOffer();
+  await loadCustomerOffer(); await loadCustomerOfferItems();
   await loadCustomerConversationMessages();
   alert(decision==="CONFIRMED"?"Zakup został potwierdzony.":"Zakup został anulowany.");
 }
@@ -759,8 +811,18 @@ async function loadCustomerOrderHistory(){
       <b>Cena:</b> ${x.price==null?"—":Number(x.price).toFixed(2)+" zł"}<br>
       <b>Firma:</b> ${esc(x.business_name||"—")}<br>
       <b>Przebieg:</b> ${x.mileage?esc(x.mileage)+" km":"—"}<br>
-      <b>Data realizacji:</b> ${esc(x.updated_at||"—")}
+      <b>Data realizacji:</b> ${esc(x.updated_at||"—")}<br><div id="histItems_${x.id}"><b>Części:</b> ładowanie...</div>
     </div>`).join(""):"Brak zrealizowanych zakupów.";
+  for(const x of d.orders){
+    const rr=await fetch("/api/customer/order-history/"+x.id+"/items");
+    const dd=await rr.json();
+    const target=$("histItems_"+x.id);
+    if(target && dd.ok){
+      target.innerHTML="<b>Części:</b><br>"+(dd.items.length?dd.items.map(i=>
+        `${esc(i.part_name)}${i.part_number?" — "+esc(i.part_number):""} × ${i.quantity}${i.unit_price==null?"":" — "+Number(i.unit_price).toFixed(2)+" zł/szt."}`
+      ).join("<br>"):"Brak pozycji.");
+    }
+  }
 }
 
 async function loadCustomerCars(){
