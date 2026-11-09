@@ -381,7 +381,22 @@ if(customer){
    const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
    const b=await request.json();
+   const items=Array.isArray(b.items)?b.items:[];
    await env.DB.prepare("INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)").bind(id,b.price?Number(b.price):null,clean(b.availability),clean(b.appointment_date),clean(b.note)).run();
+
+   // Pozycje części należą do aktualnej oferty dla tego zapytania.
+   await env.DB.prepare("DELETE FROM request_items WHERE request_id=?").bind(id).run();
+   for(const item of items){
+     const partName=clean(item.part_name);
+     if(!partName)continue;
+     const qty=Math.max(1,Number.parseInt(item.quantity,10)||1);
+     const unitPrice=item.unit_price===null||item.unit_price===undefined||String(item.unit_price).trim()==="" ? null : Number(item.unit_price);
+     await env.DB.prepare(`
+       INSERT INTO request_items(request_id,part_name,part_number,quantity,unit_price)
+       VALUES(?,?,?,?,?)
+     `).bind(id,partName,clean(item.part_number),qty,Number.isFinite(unitPrice)?unitPrice:null).run();
+   }
+
    if(clean(b.note)){
      await env.DB.prepare("INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)").bind(id,"BUSINESS",u.id,clean(b.note)).run();
    }
@@ -621,6 +636,20 @@ if(/^\/api\/customer\/requests\/\d+\/offer$/.test(url.pathname) && request.metho
   return json({ok:true,request:req,offer:offer||null});
 }
 
+// Pozycje części w ofercie - widok zalogowanego klienta
+if(/^\/api\/customer\/requests\/\d+\/items$/.test(url.pathname) && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? LIMIT 1").bind(id,u.customer_id).first();
+  if(!owned)return json({ok:false,error:"Nie znaleziono zapytania."},404);
+  const r=await env.DB.prepare(`
+    SELECT id,part_name,part_number,quantity,unit_price,created_at
+    FROM request_items WHERE request_id=? ORDER BY id ASC
+  `).bind(id).all();
+  return json({ok:true,items:r.results});
+}
+
 // Klient potwierdza albo rezygnuje z zakupu
 if(/^\/api\/customer\/requests\/\d+\/decision$/.test(url.pathname) && request.method==="POST"){
   const u=await customerAuth(request,env);
@@ -671,6 +700,28 @@ if(url.pathname==="/api/company/orders" && request.method==="GET"){
     ORDER BY r.updated_at DESC,r.id DESC
   `).bind(u.business_id).all();
   return json({ok:true,orders:r.results});
+}
+
+// Pozycje części w zamówieniu - widok firmy
+if(/^\/api\/company\/orders\/\d+\/items$/.test(url.pathname) && request.method==="GET"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=? LIMIT 1").bind(id,u.business_id).first();
+  if(!own)return json({ok:false,error:"Brak dostępu."},403);
+  const r=await env.DB.prepare(`SELECT id,part_name,part_number,quantity,unit_price,created_at FROM request_items WHERE request_id=? ORDER BY id ASC`).bind(id).all();
+  return json({ok:true,items:r.results});
+}
+
+// Pozycje części w historii klienta - tylko zrealizowane zamówienia
+if(/^\/api\/customer\/order-history\/\d+\/items$/.test(url.pathname) && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? AND status='COMPLETED' LIMIT 1").bind(id,u.customer_id).first();
+  if(!owned)return json({ok:false,error:"Nie znaleziono zrealizowanego zamówienia."},404);
+  const r=await env.DB.prepare(`SELECT id,part_name,part_number,quantity,unit_price,created_at FROM request_items WHERE request_id=? ORDER BY id ASC`).bind(id).all();
+  return json({ok:true,items:r.results});
 }
 
 // Firma oznacza potwierdzone zamowienie jako zrealizowane
