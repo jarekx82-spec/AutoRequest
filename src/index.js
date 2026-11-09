@@ -380,8 +380,31 @@ if(customer){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
-   const b=await request.json(); await env.DB.prepare("INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)").bind(id,b.price?Number(b.price):null,clean(b.availability),clean(b.appointment_date),clean(b.note)).run();
-   await env.DB.prepare("UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run(); return json({ok:true});
+   const b=await request.json();
+   const note=clean(b.note);
+
+   await env.DB.prepare(
+     "INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)"
+   ).bind(
+     id,
+     b.price?Number(b.price):null,
+     clean(b.availability),
+     clean(b.appointment_date),
+     note
+   ).run();
+
+   // Odpowiedź firmy musi być również wiadomością w rozmowie klienta.
+   if(note){
+     await env.DB.prepare(
+       "INSERT INTO messages(request_id,sender_type,message) VALUES(?,'COMPANY',?)"
+     ).bind(id,note).run();
+   }
+
+   await env.DB.prepare(
+     "UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?"
+   ).bind(id).run();
+
+   return json({ok:true});
   }
   if(/^\/api\/company\/requests\/\d+$/.test(url.pathname)&&request.method==="GET"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
