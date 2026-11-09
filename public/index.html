@@ -306,6 +306,10 @@ if(activeButton){
   $("jobCard").classList.add("hide");
   loadCustomers();
 }
+    if(tab==="history"){
+  $("jobCard").classList.add("hide");
+  loadCompanyOrders();
+}
   }
   
 async function loadCompanyOrders(){
