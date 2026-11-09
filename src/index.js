@@ -672,8 +672,8 @@ if(url.pathname==="/api/customer/order-history" && request.method==="GET"){
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
   const r=await env.DB.prepare(`
-    SELECT r.id,r.request_number,r.description,r.part_number,r.updated_at,
-           v.brand,v.model,v.vin,v.mileage,b.name AS business_name,
+    SELECT r.id,r.request_number,r.vehicle_id,r.description,r.part_number,r.updated_at,
+           v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage,b.name AS business_name,
            (SELECT price FROM responses rr WHERE rr.request_id=r.id ORDER BY rr.id DESC LIMIT 1) AS price
     FROM requests r
     JOIN vehicles v ON v.id=r.vehicle_id
