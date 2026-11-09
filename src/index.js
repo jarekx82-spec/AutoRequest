@@ -1,444 +1,116 @@
-const json=(d,s=200,h={})=>new Response(JSON.stringify(d),{status:s,headers:{"content-type":"application/json; charset=UTF-8",...h}});
-const clean=v=>v==null||String(v).trim()===""?null:String(v).trim();
-const hex=a=>[...new Uint8Array(a)].map(b=>b.toString(16).padStart(2,"0")).join("");
-async function hashPassword(p,salt){return hex(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(salt+":"+p)))}
-function cookie(req,n){return (req.headers.get("Cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith(n+"="))?.slice(n.length+1)||null}
-async function auth(req,env){
- const t=cookie(req,"ar_session"); if(!t)return null;
- return await env.DB.prepare(`SELECT u.id,u.email,u.role,u.business_id,b.name,b.slug FROM sessions s
- JOIN business_users u ON u.id=s.user_id JOIN businesses b ON b.id=u.business_id
- WHERE s.token=? AND s.expires_at>datetime('now') AND u.active=1 AND b.active=1`).bind(t).first();
+// AUTOREQUEST — DODATEK DO src/index.js
+// Wklej TEN BLOK wewnątrz export default { async fetch(request, env) { ... } }
+// po endpointach /api/customer/me, a przed końcowym return env.ASSETS.fetch(...).
+
+// 1. Lista samochodów zalogowanego klienta
+if(url.pathname==="/api/customer/vehicles" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const r=await env.DB.prepare(`
+    SELECT id,brand,model,vin,production_year,engine_capacity,
+           engine_code,fuel,power,mileage
+    FROM vehicles
+    WHERE customer_id=?
+    ORDER BY id DESC
+  `).bind(u.customer_id).all();
+
+  return json({ok:true,vehicles:r.results});
 }
-async function customerAuth(req,env){
-  const t=cookie(req,"ar_customer_session");
-  if(!t)return null;
 
-  return await env.DB.prepare(`
-    SELECT
-      cu.id AS user_id,
-      cu.customer_id,
-      cu.email,
-      cu.phone,
-      c.name
-    FROM customer_sessions cs
-    JOIN customer_users cu ON cu.id=cs.user_id
-    JOIN customers c ON c.id=cu.customer_id
-    WHERE cs.token=?
-      AND cs.expires_at>datetime('now')
-      AND cu.active=1
-  `).bind(t).first();
-}
-export default{async fetch(request,env){
- const url=new URL(request.url);
- try{
-  if(url.pathname==="/api/health")return json({ok:true,version:"MVP v3"});
-  if(url.pathname==="/api/setup-owner"&&request.method==="POST"){
-   const count=await env.DB.prepare("SELECT COUNT(*) n FROM business_users").first();
-   if(count.n>0)return json({ok:false,error:"Konto właściciela już istnieje."},403);
-   const b=await request.json(); if(!clean(b.email)||!clean(b.password)||String(b.password).length<8)return json({ok:false,error:"Podaj e-mail i hasło min. 8 znaków."},400);
-   const salt=crypto.randomUUID(), ph=await hashPassword(b.password,salt);
-   await env.DB.prepare("INSERT INTO business_users(business_id,email,password_hash,role) VALUES(1,?,?,'OWNER')").bind(clean(b.email).toLowerCase(),salt+"$"+ph).run();
-   return json({ok:true});
-  }
-  if(url.pathname==="/api/session"&&request.method==="POST"){
-   const b=await request.json(),u=await env.DB.prepare("SELECT * FROM business_users WHERE email=? AND active=1").bind((clean(b.email)||"").toLowerCase()).first();
-   if(!u)return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
-   const [salt,stored]=u.password_hash.split("$"),calc=await hashPassword(b.password||"",salt);
-   if(calc!==stored)return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
-   const token=crypto.randomUUID()+crypto.randomUUID(),exp=new Date(Date.now()+7*864e5).toISOString();
-   await env.DB.prepare("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)").bind(token,u.id,exp).run();
-   return json({ok:true},200,{"Set-Cookie":`ar_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`});
-  }
-  if(url.pathname==="/api/customer/register" && request.method==="POST"){
-  const b = await request.json();
+// 2. Dodanie samochodu do konta klienta
+if(url.pathname==="/api/customer/vehicles" && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
-  const name = clean(b.name);
-  const phone = clean(b.phone);
-  const email = clean(b.email).toLowerCase();
-  const password = String(b.password || "");
+  const b=await request.json();
+  const brand=clean(b.brand);
+  const model=clean(b.model);
 
-  if(!name || !phone || !email || !password){
-    return json({
-      ok:false,
-      error:"Uzupełnij wszystkie pola."
-    },400);
+  if(!brand || !model){
+    return json({ok:false,error:"Marka i model są wymagane."},400);
   }
 
-  if(password.length < 8){
-    return json({
-      ok:false,
-      error:"Hasło musi mieć minimum 8 znaków."
-    },400);
-  }
-
-  const existing = await env.DB.prepare(`
-    SELECT id
-    FROM customer_users
-    WHERE LOWER(email)=? OR phone=?
-    LIMIT 1
-  `).bind(email,phone).first();
-
-  if(existing){
-    return json({
-      ok:false,
-      error:"Konto z tym e-mailem lub numerem telefonu już istnieje."
-    },409);
-  }
-
-  let customer = await env.DB.prepare(`
-    SELECT id
-    FROM customers
-    WHERE phone=? OR LOWER(email)=?
-    ORDER BY id ASC
-    LIMIT 1
-  `).bind(phone,email).first();
-
-  let customerId;
-
-  if(customer){
-    customerId = customer.id;
-
-    await env.DB.prepare(`
-      UPDATE customers
-      SET name=?, phone=?, email=?
-      WHERE id=?
-    `).bind(name,phone,email,customerId).run();
-
-  }else{
-    const c = await env.DB.prepare(`
-      INSERT INTO customers(name,phone,email)
-      VALUES(?,?,?)
-    `).bind(name,phone,email).run();
-
-    customerId = c.meta.last_row_id;
-  }
-
-  const salt = crypto.randomUUID();
-  const hash = await hashPassword(password,salt);
-  const passwordHash = salt + "$" + hash;
-
-  await env.DB.prepare(`
-    INSERT INTO customer_users
-      (customer_id,email,phone,password_hash,active)
-    VALUES(?,?,?,?,1)
+  const r=await env.DB.prepare(`
+    INSERT INTO vehicles(
+      customer_id,brand,model,vin,production_year,engine_capacity,
+      engine_code,fuel,power,mileage
+    )
+    VALUES(?,?,?,?,?,?,?,?,?,?)
   `).bind(
-    customerId,
-    email,
-    phone,
-    passwordHash
+    u.customer_id,
+    brand,
+    model,
+    clean(b.vin),
+    clean(b.production_year),
+    clean(b.engine_capacity),
+    clean(b.engine_code),
+    clean(b.fuel),
+    clean(b.power),
+    clean(b.mileage)
+  ).run();
+
+  return json({ok:true,vehicle_id:r.meta.last_row_id},201);
+}
+
+// 3. Zapytanie o część dla WYBRANEGO samochodu klienta
+if(url.pathname==="/api/customer/requests" && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const b=await request.json();
+  const vehicleId=Number(b.vehicle_id);
+  const description=clean(b.description);
+
+  if(!vehicleId || !description){
+    return json({ok:false,error:"Wybierz samochód i wpisz czego potrzebujesz."},400);
+  }
+
+  // Bardzo ważne: samochód musi należeć do zalogowanego klienta.
+  const vehicle=await env.DB.prepare(`
+    SELECT id FROM vehicles
+    WHERE id=? AND customer_id=?
+    LIMIT 1
+  `).bind(vehicleId,u.customer_id).first();
+
+  if(!vehicle){
+    return json({ok:false,error:"Ten samochód nie należy do Twojego konta."},403);
+  }
+
+  const businessSlug=clean(b.business_slug)||"temot";
+  const business=await env.DB.prepare(`
+    SELECT id FROM businesses
+    WHERE slug=? AND active=1
+    LIMIT 1
+  `).bind(businessSlug).first();
+
+  if(!business){
+    return json({ok:false,error:"Nie znaleziono firmy odbierającej zapytanie."},404);
+  }
+
+  const requestNumber="AR-"+new Date().getFullYear()+"-"+crypto.randomUUID().slice(0,8).toUpperCase();
+
+  const r=await env.DB.prepare(`
+    INSERT INTO requests(
+      request_number,business_id,customer_id,vehicle_id,
+      request_type,category,description,part_number,status
+    )
+    VALUES(?,?,?,?,?,?,?,?,?)
+  `).bind(
+    requestNumber,
+    business.id,
+    u.customer_id,
+    vehicleId,
+    clean(b.request_type)||"PART",
+    clean(b.category)||"OTHER",
+    description,
+    clean(b.part_number),
+    "NEW"
   ).run();
 
   return json({
     ok:true,
-    customer_id:customerId
+    request_id:r.meta.last_row_id,
+    request_number:requestNumber
   },201);
 }
-  if(url.pathname==="/api/customer/session" && request.method==="POST"){
-  const b=await request.json();
-
-  const login=clean(b.login).toLowerCase();
-  const password=String(b.password||"");
-
-  if(!login || !password){
-    return json({ok:false,error:"Podaj telefon lub e-mail oraz hasło."},400);
-  }
-
-  const u=await env.DB.prepare(`
-    SELECT *
-    FROM customer_users
-    WHERE active=1
-      AND (LOWER(email)=? OR phone=?)
-    LIMIT 1
-  `).bind(login,login).first();
-
-  if(!u){
-    return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
-  }
-
-  const [salt,stored]=u.password_hash.split("$");
-  const calc=await hashPassword(password,salt);
-   console.log("LOGIN TEST", {
-  login,
-  salt,
-  stored,
-  calc,
-  zgodne: calc === stored
-});
-
-  if(calc!==stored){
-    return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
-  }
-
-  const token=crypto.randomUUID()+crypto.randomUUID();
-  const exp=new Date(Date.now()+7*864e5).toISOString();
-
-  await env.DB.prepare(`
-    INSERT INTO customer_sessions(token,user_id,expires_at)
-    VALUES(?,?,?)
-  `).bind(token,u.id,exp).run();
-
-  return json(
-    {ok:true},
-    200,
-    {"Set-Cookie":`ar_customer_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`}
-  );
-}
-  if(url.pathname==="/api/customer/me" && request.method==="GET"){
-  const u=await customerAuth(request,env);
-
-  if(!u){
-    return json({
-      ok:false,
-      error:"Brak autoryzacji."
-    },401);
-  }
-
-  return json({
-    ok:true,
-    user:{
-      id:u.user_id,
-      customer_id:u.customer_id,
-      email:u.email,
-      phone:u.phone,
-      name:u.name
-    }
-  });
-}
-  if(url.pathname==="/api/logout"&&request.method==="POST"){
-   const t=cookie(request,"ar_session"); if(t)await env.DB.prepare("DELETE FROM sessions WHERE token=?").bind(t).run();
-   return json({ok:true},200,{"Set-Cookie":"ar_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
-  }
-  if(url.pathname==="/api/me"){const u=await auth(request,env);return u?json({ok:true,user:u}):json({ok:false},401)}
-  if(url.pathname.startsWith("/api/public/business/")){
-   const slug=url.pathname.split("/").pop(); const b=await env.DB.prepare("SELECT id,name,slug,type,city FROM businesses WHERE slug=? AND active=1").bind(slug).first();
-   return b?json({ok:true,business:b}):json({ok:false,error:"Nie znaleziono firmy."},404);
-  }
-  if(url.pathname==="/api/public/requests"&&request.method==="POST"){
-   const b=await request.json(),firm=await env.DB.prepare("SELECT id FROM businesses WHERE slug=? AND active=1").bind(clean(b.slug)).first();
-   if(!firm)return json({ok:false,error:"Nie znaleziono firmy."},404);
-   for(const f of ["name","phone","brand","model","description"])if(!clean(b[f]))return json({ok:false,error:"Brak pola: "+f},400);
-  let customer=await env.DB.prepare(
-  "SELECT id FROM customers WHERE phone=? ORDER BY id ASC LIMIT 1"
-).bind(clean(b.phone)).first();
-
-let customerId;
-
-if(customer){
-  customerId=customer.id;
-
-  await env.DB.prepare(
-    "UPDATE customers SET name=?,email=?,city=? WHERE id=?"
-  ).bind(clean(b.name),clean(b.email),clean(b.city),customerId).run();
-}else{
-  const c=await env.DB.prepare(
-    "INSERT INTO customers(name,phone,email,city) VALUES(?,?,?,?)"
-  ).bind(clean(b.name),clean(b.phone),clean(b.email),clean(b.city)).run();
-
-  customerId=c.meta.last_row_id;
-}
-   const v=await env.DB.prepare(`INSERT INTO vehicles(customer_id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(customerId,clean(b.brand),clean(b.model),clean(b.vin),b.production_year?Number(b.production_year):null,clean(b.engine_capacity),clean(b.engine_code),clean(b.fuel),b.power?Number(b.power):null,b.mileage?Number(b.mileage):null).run();
-   const num="AR-"+new Date().getFullYear()+"-"+crypto.randomUUID().slice(0,8).toUpperCase();
- const r=await env.DB.prepare(`INSERT INTO requests(request_number,business_id,customer_id,vehicle_id,request_type,category,description,part_number,status) VALUES(?,?,?,?,?,?,?,?,'NEW')`).bind(num,firm.id,customerId,v.meta.last_row_id,clean(b.request_type)||"PART",clean(b.category)||"OTHER",clean(b.description),clean(b.part_number)).run();
-   return json({ok:true,request_number:num,request_id:r.meta.last_row_id},201);
-  }
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="GET"){
- const id=Number(url.pathname.split("/")[4]);
- const r=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC").bind(id).all();
- return json({ok:true,messages:r.results});
-}
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname)&&request.method==="POST"){
- const id=Number(url.pathname.split("/")[4]);
- const b=await request.json();
- if(!clean(b.message)) return json({ok:false,error:"Wiadomość jest pusta."},400);
-
- await env.DB.prepare(
-  "INSERT INTO messages(request_id,sender_type,message) VALUES(?,'CUSTOMER',?)"
- ).bind(id,clean(b.message)).run();
-
- return json({ok:true},201);
-}
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="GET"){
-  const id=Number(url.pathname.split("/")[4]);
-
-  const r=await env.DB.prepare(
-    "SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC"
-  ).bind(id).all();
-
-  return json({ok:true,messages:r.results});
-}
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="GET"){
-  const id=Number(url.pathname.split("/")[4]);
-
-  const r=await env.DB.prepare(
-    "SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC"
-  ).bind(id).all();
-
-  return json({ok:true,messages:r.results});
-}
-  if(url.pathname==="/api/company/customers" && request.method==="GET"){
-  const u=await auth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const r=await env.DB.prepare(`
-    SELECT DISTINCT
-      c.id,
-      c.name,
-      c.phone,
-      c.email,
-      c.city
-    FROM customers c
-    JOIN requests r ON r.customer_id=c.id
-    WHERE r.business_id=?
-    ORDER BY c.id DESC
-  `).bind(u.business_id).all();
-
-  return json({ok:true,customers:r.results});
-}
-  if(/^\/api\/company\/customers\/\d+$/.test(url.pathname) && request.method==="GET"){
-  const u=await auth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const id=Number(url.pathname.split("/").pop());
-
-  const customer=await env.DB.prepare(`
-    SELECT c.id,c.name,c.phone,c.email,c.city
-    FROM customers c
-    JOIN requests r ON r.customer_id=c.id
-    WHERE c.id=? AND r.business_id=?
-    LIMIT 1
-  `).bind(id,u.business_id).first();
-
-  if(!customer)return json({ok:false,error:"Nie znaleziono klienta."},404);
-
-  const vehicles=await env.DB.prepare(`
-    SELECT DISTINCT v.id,v.brand,v.model,v.vin,v.production_year,
-    v.engine_capacity,v.engine_code,v.fuel,v.power,v.mileage
-    FROM vehicles v
-    JOIN requests r ON r.vehicle_id=v.id
-    WHERE v.customer_id=? AND r.business_id=?
-    ORDER BY v.id DESC
-  `).bind(id,u.business_id).all();
-
-  const requests=await env.DB.prepare(`
-    SELECT r.id,r.request_number,r.status,r.request_type,r.category,
-    r.description,r.created_at,v.brand,v.model
-    FROM requests r
-    JOIN vehicles v ON v.id=r.vehicle_id
-    WHERE r.customer_id=? AND r.business_id=?
-    ORDER BY r.id DESC
-  `).bind(id,u.business_id).all();
-
-  return json({
-    ok:true,
-    customer,
-    vehicles:vehicles.results,
-    requests:requests.results
-  });
-}
-  if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET"){
-  const u=await auth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const id=Number(url.pathname.split("/").pop());
-
-  const vehicle=await env.DB.prepare(`
-    SELECT DISTINCT
-      v.id,v.customer_id,v.brand,v.model,v.vin,v.production_year,
-      v.engine_capacity,v.engine_code,v.fuel,v.power,v.mileage
-    FROM vehicles v
-    JOIN requests r ON r.vehicle_id=v.id
-    WHERE v.id=? AND r.business_id=?
-    LIMIT 1
-  `).bind(id,u.business_id).first();
-
-  if(!vehicle)return json({ok:false,error:"Nie znaleziono samochodu."},404);
-
-  const requests=await env.DB.prepare(`
-    SELECT
-      r.id,r.request_number,r.status,r.request_type,r.category,
-      r.description,r.part_number,r.created_at,r.updated_at
-    FROM requests r
-    WHERE r.vehicle_id=? AND r.business_id=?
-    ORDER BY r.id DESC
-  `).bind(id,u.business_id).all();
-
-   const serviceHistory=await env.DB.prepare(`
-  SELECT
-    id,service_date,mileage,service_type,description,parts,
-    next_service_date,next_service_mileage,created_at
-  FROM service_history
-  WHERE vehicle_id=? AND business_id=?
-  ORDER BY service_date DESC,id DESC
-`).bind(id,u.business_id).all();
-
- return json({
-  ok:true,
-  vehicle,
-  requests:requests.results,
-  serviceHistory:serviceHistory.results
-});
-  }
-  if(url.pathname==="/api/company/requests"&&request.method==="GET"){
-   const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-   const r=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.business_id=? ORDER BY r.id DESC`).bind(u.business_id).all();
-   return json({ok:true,requests:r.results});
-  }
-  if(/^\/api\/company\/requests\/\d+\/response$/.test(url.pathname)&&request.method==="POST"){
-   const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-   const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
-   if(!own)return json({ok:false,error:"Brak dostępu."},403);
-   const b=await request.json(); await env.DB.prepare("INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)").bind(id,b.price?Number(b.price):null,clean(b.availability),clean(b.appointment_date),clean(b.note)).run();
-   await env.DB.prepare("UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run(); return json({ok:true});
-  }
-  if(/^\/api\/company\/requests\/\d+$/.test(url.pathname)&&request.method==="GET"){
-   const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-   const id=Number(url.pathname.split("/").pop()),x=await env.DB.prepare(`SELECT r.*,c.name customer_name,c.phone customer_phone,c.email customer_email,v.brand,v.model,v.vin,v.production_year,v.engine_capacity,v.engine_code,v.mileage FROM requests r JOIN customers c ON c.id=r.customer_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=? AND r.business_id=?`).bind(id,u.business_id).first();
-   if(!x)return json({ok:false,error:"Brak dostępu."},403); const rr=await env.DB.prepare("SELECT * FROM responses WHERE request_id=? ORDER BY id DESC").bind(id).all(); return json({ok:true,request:x,responses:rr.results});
-  }
-  if(/^\/api\/company\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="GET"){
-  const u=await auth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const id=Number(url.pathname.split("/")[4]);
-
-  const own=await env.DB.prepare(
-    "SELECT id FROM requests WHERE id=? AND business_id=?"
-  ).bind(id,u.business_id).first();
-
-  if(!own)return json({ok:false,error:"Brak dostępu."},403);
-
-  const m=await env.DB.prepare(
-    "SELECT * FROM messages WHERE request_id=? ORDER BY id ASC"
-  ).bind(id).all();
-
-  return json({ok:true,messages:m.results});
-}
-  if(/^\/api\/company\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="POST"){
-  const u=await auth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const id=Number(url.pathname.split("/")[4]);
-
-  const own=await env.DB.prepare(
-    "SELECT id FROM requests WHERE id=? AND business_id=?"
-  ).bind(id,u.business_id).first();
-
-  if(!own)return json({ok:false,error:"Brak dostępu."},403);
-
-  const b=await request.json();
-  const message=clean(b.message);
-
-  if(!message)
-    return json({ok:false,error:"Wiadomość nie może być pusta."},400);
-
-  await env.DB.prepare(
-    "INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)"
-  ).bind(id,"BUSINESS",u.id,message).run();
-
-  return json({ok:true},201);
-}
-    return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
- }catch(e){
-  return json({ok:false,error:e.message},500);
- }
-}};
