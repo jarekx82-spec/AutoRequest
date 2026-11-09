@@ -71,6 +71,7 @@
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
       <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
+      <button type="button" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
       <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
     </div>
 
@@ -97,6 +98,21 @@
           </div>
         </form>
         <p id="customerCarMsg"></p>
+      </div>
+    </div>
+
+    <div id="customerRequestsSection" class="hide">
+      <div class="box">
+        <h2>Moje zapytania</h2>
+        <div id="customerRequestsList">Ladowanie...</div>
+        <div id="customerConversation" class="hide">
+          <button type="button" class="dark" onclick="closeCustomerConversation()">← WROC DO ZAPYTAN</button>
+          <h3 id="customerConversationTitle">Rozmowa</h3>
+          <div id="customerConversationMessages" class="box" style="max-height:360px;overflow:auto"></div>
+          <input id="customerConversationInput" placeholder="Napisz wiadomosc do firmy...">
+          <button type="button" onclick="sendCustomerConversationMessage()">WYSLIJ</button>
+          <p id="customerConversationMsg"></p>
+        </div>
       </div>
     </div>
 
@@ -628,9 +644,35 @@ function openCustomerPanel(user){
 
 function showCustomerSection(section){
   $("customerCarsSection").classList.toggle("hide", section !== "cars");
+  $("customerRequestsSection").classList.toggle("hide", section !== "requests");
   $("customerRequestSection").classList.toggle("hide", section !== "request");
   if(section === "cars") loadCustomerCars();
+  if(section === "requests"){ closeCustomerConversation(); loadCustomerRequests(); }
   if(section === "request") loadCustomerCars();
+}
+
+let customerConversationRequestId=0;
+async function loadCustomerRequests(){
+  const r=await fetch("/api/customer/requests"),d=await r.json();
+  if(!d.ok){ $("customerRequestsList").textContent=d.error||"Blad pobierania zapytan."; return; }
+  $("customerRequestsList").innerHTML=d.requests.length?d.requests.map(x=>`<div class="job" onclick="openCustomerConversation(${x.id}, '${esc(x.request_number)}')"><b>${esc(x.request_number)}</b> — ${esc(x.status||"NEW")}<br>${esc(x.brand)} ${esc(x.model)}<br>Firma: ${esc(x.business_name||"—")}<br>${esc(x.description||"")}</div>`).join(""):"Brak zapytan.";
+}
+async function openCustomerConversation(id,num){
+  customerConversationRequestId=id;
+  $("customerRequestsList").classList.add("hide"); $("customerConversation").classList.remove("hide");
+  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages();
+}
+function closeCustomerConversation(){ customerConversationRequestId=0; $("customerConversation").classList.add("hide"); $("customerRequestsList").classList.remove("hide"); }
+async function loadCustomerConversationMessages(){
+  if(!customerConversationRequestId)return;
+  const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/messages"),d=await r.json(),el=$("customerConversationMessages");
+  if(!d.ok){el.textContent=d.error||"Blad pobierania wiadomosci.";return;}
+  el.innerHTML=d.messages.length?d.messages.map(m=>`<div class="job" style="cursor:default"><b>${m.sender_type==="COMPANY"?"Firma":"Ty"}:</b><br>${esc(m.message)}</div>`).join(""):"Brak wiadomosci."; el.scrollTop=el.scrollHeight;
+}
+async function sendCustomerConversationMessage(){
+  const input=$("customerConversationInput"),message=input.value.trim(); if(!message||!customerConversationRequestId)return;
+  const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message})}),d=await r.json();
+  $("customerConversationMsg").textContent=d.ok?"":(d.error||"Nie udalo sie wyslac."); if(d.ok){input.value="";await loadCustomerConversationMessages();}
 }
 
 async function loadCustomerCars(){
