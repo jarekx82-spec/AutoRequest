@@ -381,29 +381,11 @@ if(customer){
    const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
    const b=await request.json();
-   const note=clean(b.note);
-
-   await env.DB.prepare(
-     "INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)"
-   ).bind(
-     id,
-     b.price?Number(b.price):null,
-     clean(b.availability),
-     clean(b.appointment_date),
-     note
-   ).run();
-
-   // Odpowiedź firmy musi być również wiadomością w rozmowie klienta.
-   if(note){
-     await env.DB.prepare(
-       "INSERT INTO messages(request_id,sender_type,message) VALUES(?,'COMPANY',?)"
-     ).bind(id,note).run();
+   await env.DB.prepare("INSERT INTO responses(request_id,price,availability,appointment_date,note) VALUES(?,?,?,?,?)").bind(id,b.price?Number(b.price):null,clean(b.availability),clean(b.appointment_date),clean(b.note)).run();
+   if(clean(b.note)){
+     await env.DB.prepare("INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)").bind(id,"BUSINESS",u.id,clean(b.note)).run();
    }
-
-   await env.DB.prepare(
-     "UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?"
-   ).bind(id).run();
-
+   await env.DB.prepare("UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();
    return json({ok:true});
   }
   if(/^\/api\/company\/requests\/\d+$/.test(url.pathname)&&request.method==="GET"){
@@ -615,6 +597,93 @@ if(/^\/api\/customer\/requests\/\d+\/messages$/.test(url.pathname)){
     await env.DB.prepare("INSERT INTO messages(request_id,sender_type,message) VALUES(?,'CUSTOMER',?)").bind(requestId,message).run();
     return json({ok:true},201);
   }
+}
+
+
+// Szczegoly oferty dla zalogowanego klienta
+if(/^\/api\/customer\/requests\/\d+\/offer$/.test(url.pathname) && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const req=await env.DB.prepare(`
+    SELECT r.id,r.request_number,r.status,r.description,r.part_number,r.created_at,
+           v.brand,v.model,v.vin,v.mileage,b.name AS business_name
+    FROM requests r
+    JOIN vehicles v ON v.id=r.vehicle_id
+    JOIN businesses b ON b.id=r.business_id
+    WHERE r.id=? AND r.customer_id=?
+  `).bind(id,u.customer_id).first();
+  if(!req)return json({ok:false,error:"Nie znaleziono zapytania."},404);
+  const offer=await env.DB.prepare(`
+    SELECT price,availability,appointment_date,note,created_at
+    FROM responses WHERE request_id=? ORDER BY id DESC LIMIT 1
+  `).bind(id).first();
+  return json({ok:true,request:req,offer:offer||null});
+}
+
+// Klient potwierdza albo rezygnuje z zakupu
+if(/^\/api\/customer\/requests\/\d+\/decision$/.test(url.pathname) && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const body=await request.json();
+  const decision=clean(body.decision).toUpperCase();
+  const req=await env.DB.prepare("SELECT id,status FROM requests WHERE id=? AND customer_id=?").bind(id,u.customer_id).first();
+  if(!req)return json({ok:false,error:"Nie znaleziono zapytania."},404);
+  if(req.status!=="ANSWERED")return json({ok:false,error:"Ta oferta nie oczekuje już na decyzję."},400);
+  if(decision!=="CONFIRMED" && decision!=="CANCELLED")return json({ok:false,error:"Nieprawidłowa decyzja."},400);
+  await env.DB.prepare("UPDATE requests SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(decision,id).run();
+  const txt=decision==="CONFIRMED" ? "Klient potwierdził zakup." : "Klient zrezygnował z zakupu.";
+  await env.DB.prepare("INSERT INTO messages(request_id,sender_type,message) VALUES(?,'CUSTOMER',?)").bind(id,txt).run();
+  return json({ok:true,status:decision});
+}
+
+// Historia zakupow klienta - tylko zrealizowane
+if(url.pathname==="/api/customer/order-history" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const r=await env.DB.prepare(`
+    SELECT r.id,r.request_number,r.description,r.part_number,r.updated_at,
+           v.brand,v.model,v.vin,v.mileage,b.name AS business_name,
+           (SELECT price FROM responses rr WHERE rr.request_id=r.id ORDER BY rr.id DESC LIMIT 1) AS price
+    FROM requests r
+    JOIN vehicles v ON v.id=r.vehicle_id
+    JOIN businesses b ON b.id=r.business_id
+    WHERE r.customer_id=? AND r.status='COMPLETED'
+    ORDER BY r.updated_at DESC,r.id DESC
+  `).bind(u.customer_id).all();
+  return json({ok:true,orders:r.results});
+}
+
+// Zamowienia firmy: potwierdzone i zrealizowane
+if(url.pathname==="/api/company/orders" && request.method==="GET"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const r=await env.DB.prepare(`
+    SELECT r.id,r.request_number,r.status,r.description,r.part_number,r.updated_at,
+           c.name AS customer_name,c.phone AS customer_phone,
+           v.brand,v.model,v.vin,v.mileage,
+           (SELECT price FROM responses rr WHERE rr.request_id=r.id ORDER BY rr.id DESC LIMIT 1) AS price
+    FROM requests r
+    JOIN customers c ON c.id=r.customer_id
+    JOIN vehicles v ON v.id=r.vehicle_id
+    WHERE r.business_id=? AND r.status IN ('CONFIRMED','COMPLETED','CANCELLED')
+    ORDER BY r.updated_at DESC,r.id DESC
+  `).bind(u.business_id).all();
+  return json({ok:true,orders:r.results});
+}
+
+// Firma oznacza potwierdzone zamowienie jako zrealizowane
+if(/^\/api\/company\/requests\/\d+\/complete$/.test(url.pathname) && request.method==="POST"){
+  const u=await auth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/")[4]);
+  const req=await env.DB.prepare("SELECT id,status FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
+  if(!req)return json({ok:false,error:"Brak dostępu."},403);
+  if(req.status!=="CONFIRMED")return json({ok:false,error:"Najpierw klient musi potwierdzić zakup."},400);
+  await env.DB.prepare("UPDATE requests SET status='COMPLETED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();
+  await env.DB.prepare("INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)").bind(id,"BUSINESS",u.id,"Zamówienie zostało zrealizowane.").run();
+  return json({ok:true,status:"COMPLETED"});
 }
 
     return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
