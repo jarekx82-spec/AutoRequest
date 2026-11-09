@@ -157,6 +157,13 @@ export default{async fetch(request,env){
 
   const [salt,stored]=u.password_hash.split("$");
   const calc=await hashPassword(password,salt);
+   console.log("LOGIN TEST", {
+  login,
+  salt,
+  stored,
+  calc,
+  zgodne: calc === stored
+});
 
   if(calc!==stored){
     return json({ok:false,error:"Nieprawidłowy login lub hasło."},401);
