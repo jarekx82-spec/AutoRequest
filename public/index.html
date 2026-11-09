@@ -72,7 +72,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
       <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
       <button type="button" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
-      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
+      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button> <button type="button" onclick="showCustomerSection('history')">HISTORIA ZAKUPÓW</button>
     </div>
 
     <div id="customerCarsSection">
@@ -109,10 +109,19 @@
           <button type="button" class="dark" onclick="closeCustomerConversation()">← WROC DO ZAPYTAN</button>
           <h3 id="customerConversationTitle">Rozmowa</h3>
           <div id="customerConversationMessages" class="box" style="max-height:360px;overflow:auto"></div>
+          <div id="customerOfferBox" class="box hide"></div>
           <input id="customerConversationInput" placeholder="Napisz wiadomosc do firmy...">
           <button type="button" onclick="sendCustomerConversationMessage()">WYSLIJ</button>
           <p id="customerConversationMsg"></p>
         </div>
+      </div>
+    </div>
+
+    <div id="customerHistorySection" class="hide">
+      <div class="box">
+        <h2>Historia zakupów</h2>
+        <p>Zrealizowane zakupy części przypisane do Twoich samochodów.</p>
+        <div id="customerOrderHistory">Ładowanie...</div>
       </div>
     </div>
 
@@ -188,8 +197,9 @@
 </div>
 
 <div id="historyTab" class="hide">
-  <h2>Historia zamówień</h2>
-  <p>Tutaj będą zakończone i zrealizowane zamówienia.</p>
+  <h2>Zamówienia</h2>
+  <p>Potwierdzone przez klientów oraz zrealizowane zamówienia.</p>
+  <div id="companyOrders">Ładowanie...</div>
 </div>
 
 <div id="customersTab" class="hide">
@@ -297,7 +307,29 @@ if(activeButton){
   loadCustomers();
 }
   }
-  async function loadCustomers(){
+  
+async function loadCompanyOrders(){
+  const r=await fetch("/api/company/orders"),d=await r.json(),el=$("companyOrders");
+  if(!d.ok){el.textContent=d.error||"Nie udało się pobrać zamówień.";return;}
+  el.innerHTML=d.orders.length?d.orders.map(x=>`
+    <div class="job" style="cursor:default">
+      <b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>
+      Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone||"—")}<br>
+      Samochód: ${esc(x.brand)} ${esc(x.model)}<br>
+      ${esc(x.description||"")}<br>
+      Cena: ${x.price==null?"—":Number(x.price).toFixed(2)+" zł"}<br>
+      ${x.status==="CONFIRMED"?`<button type="button" onclick="completeOrder(${x.id})">OZNACZ JAKO ZREALIZOWANE</button>`:""}
+    </div>`).join(""):"Brak potwierdzonych lub zrealizowanych zamówień.";
+}
+async function completeOrder(id){
+  if(!confirm("Oznaczyć zamówienie jako zrealizowane?"))return;
+  const r=await fetch("/api/company/requests/"+id+"/complete",{method:"POST"}),d=await r.json();
+  if(!d.ok){alert(d.error||"Nie udało się zakończyć zamówienia.");return;}
+  await loadCompanyOrders();
+  alert("Zamówienie zostało zrealizowane i trafiło do historii klienta.");
+}
+
+async function loadCustomers(){
   const r = await fetch("/api/company/customers");
 
   if(r.status === 401){
@@ -646,9 +678,11 @@ function showCustomerSection(section){
   $("customerCarsSection").classList.toggle("hide", section !== "cars");
   $("customerRequestsSection").classList.toggle("hide", section !== "requests");
   $("customerRequestSection").classList.toggle("hide", section !== "request");
+  $("customerHistorySection").classList.toggle("hide", section !== "history");
   if(section === "cars") loadCustomerCars();
   if(section === "requests"){ closeCustomerConversation(); loadCustomerRequests(); }
   if(section === "request") loadCustomerCars();
+  if(section === "history") loadCustomerOrderHistory();
 }
 
 let customerConversationRequestId=0;
@@ -660,7 +694,7 @@ async function loadCustomerRequests(){
 async function openCustomerConversation(id,num){
   customerConversationRequestId=id;
   $("customerRequestsList").classList.add("hide"); $("customerConversation").classList.remove("hide");
-  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages();
+  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages(); await loadCustomerOffer();
 }
 function closeCustomerConversation(){ customerConversationRequestId=0; $("customerConversation").classList.add("hide"); $("customerRequestsList").classList.remove("hide"); }
 async function loadCustomerConversationMessages(){
@@ -673,6 +707,60 @@ async function sendCustomerConversationMessage(){
   const input=$("customerConversationInput"),message=input.value.trim(); if(!message||!customerConversationRequestId)return;
   const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message})}),d=await r.json();
   $("customerConversationMsg").textContent=d.ok?"":(d.error||"Nie udalo sie wyslac."); if(d.ok){input.value="";await loadCustomerConversationMessages();}
+}
+
+
+async function loadCustomerOffer(){
+  if(!customerConversationRequestId)return;
+  const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/offer");
+  const d=await r.json();
+  const box=$("customerOfferBox");
+  if(!d.ok || !d.offer){ box.classList.add("hide"); box.innerHTML=""; return; }
+  const x=d.request,o=d.offer;
+  box.classList.remove("hide");
+  const price=(o.price===null||o.price===undefined)?"—":Number(o.price).toFixed(2)+" zł";
+  box.innerHTML=`
+    <h3>Oferta firmy</h3>
+    <b>Cena:</b> ${esc(price)}<br>
+    <b>Dostępność:</b> ${esc(o.availability||"—")}<br>
+    <b>Termin:</b> ${esc(o.appointment_date||"—")}<br>
+    ${o.note?`<b>Informacja:</b> ${esc(o.note)}<br>`:""}
+    ${x.status==="ANSWERED"?`
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" onclick="customerDecision('CONFIRMED')">POTWIERDZAM ZAKUP</button>
+        <button type="button" class="dark" onclick="customerDecision('CANCELLED')">REZYGNUJĘ</button>
+      </div>`:
+      `<p><b>Status:</b> ${esc(x.status)}</p>`}
+  `;
+}
+async function customerDecision(decision){
+  if(!customerConversationRequestId)return;
+  const question=decision==="CONFIRMED"?"Potwierdzić zakup?":"Zrezygnować z zakupu?";
+  if(!confirm(question))return;
+  const r=await fetch("/api/customer/requests/"+customerConversationRequestId+"/decision",{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({decision})
+  });
+  const d=await r.json();
+  if(!d.ok){alert(d.error||"Nie udało się zapisać decyzji.");return;}
+  await loadCustomerOffer();
+  await loadCustomerConversationMessages();
+  alert(decision==="CONFIRMED"?"Zakup został potwierdzony.":"Zakup został anulowany.");
+}
+async function loadCustomerOrderHistory(){
+  const r=await fetch("/api/customer/order-history"),d=await r.json(),el=$("customerOrderHistory");
+  if(!d.ok){el.textContent=d.error||"Nie udało się pobrać historii.";return;}
+  el.innerHTML=d.orders.length?d.orders.map(x=>`
+    <div class="job" style="cursor:default">
+      <b>${esc(x.request_number)}</b> — ZREALIZOWANE<br>
+      <b>Samochód:</b> ${esc(x.brand)} ${esc(x.model)}<br>
+      <b>VIN:</b> ${esc(x.vin||"—")}<br>
+      <b>Część / opis:</b> ${esc(x.description||"—")}<br>
+      <b>Numer części:</b> ${esc(x.part_number||"—")}<br>
+      <b>Cena:</b> ${x.price==null?"—":Number(x.price).toFixed(2)+" zł"}<br>
+      <b>Firma:</b> ${esc(x.business_name||"—")}<br>
+      <b>Przebieg:</b> ${x.mileage?esc(x.mileage)+" km":"—"}<br>
+      <b>Data realizacji:</b> ${esc(x.updated_at||"—")}
+    </div>`).join(""):"Brak zrealizowanych zakupów.";
 }
 
 async function loadCustomerCars(){
