@@ -559,6 +559,41 @@ if(url.pathname==="/api/customer/requests" && request.method==="POST"){
 }
 
 
+
+// Lista zapytan zalogowanego klienta
+if(url.pathname==="/api/customer/requests" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const r=await env.DB.prepare(`
+    SELECT r.id,r.request_number,r.status,r.description,r.created_at,
+           v.brand,v.model,b.name AS business_name
+    FROM requests r
+    JOIN vehicles v ON v.id=r.vehicle_id
+    JOIN businesses b ON b.id=r.business_id
+    WHERE r.customer_id=? ORDER BY r.id DESC
+  `).bind(u.customer_id).all();
+  return json({ok:true,requests:r.results});
+}
+
+// Wiadomosci klienta - tylko do jego wlasnego zapytania
+if(/^\/api\/customer\/requests\/\d+\/messages$/.test(url.pathname)){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const requestId=Number(url.pathname.split("/")[4]);
+  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? LIMIT 1").bind(requestId,u.customer_id).first();
+  if(!owned)return json({ok:false,error:"Nie znaleziono zapytania."},404);
+  if(request.method==="GET"){
+    const m=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC").bind(requestId).all();
+    return json({ok:true,messages:m.results});
+  }
+  if(request.method==="POST"){
+    const body=await request.json(),message=clean(body.message);
+    if(!message)return json({ok:false,error:"Wiadomosc nie moze byc pusta."},400);
+    await env.DB.prepare("INSERT INTO messages(request_id,sender_type,message) VALUES(?,'CUSTOMER',?)").bind(requestId,message).run();
+    return json({ok:true},201);
+  }
+}
+
     return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
  }catch(e){
   return json({ok:false,error:e.message},500);
