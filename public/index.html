@@ -83,11 +83,14 @@
 
     <div id="customerCarsSection">
       <div class="box">
-        <h2>Moje samochody</h2>
-        <div id="customerCarsList">Ładowanie samochodów...</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <h2 style="margin:0;">Moje samochody</h2>
+          <button type="button" id="customerAddCarButton" onclick="showCustomerAddCarForm()">+ DODAJ SAMOCHÓD</button>
+        </div>
+        <div id="customerCarsList" style="margin-top:14px;">Ładowanie samochodów...</div>
       </div>
 
-      <div class="box" id="customerAddCarBox">
+      <div class="box hide" id="customerAddCarBox">
         <h3>Dodaj samochód</h3>
         <form id="customerCarForm">
           <div class="grid">
@@ -100,7 +103,7 @@
             <div><label>Paliwo</label><select id="carFuel"><option value="">— wybierz —</option><option>Benzyna</option><option>Diesel</option><option>LPG</option><option>Hybryda</option><option>Elektryczny</option><option>Inne</option></select></div>
             <div><label>Moc</label><input id="carPower" placeholder="np. 177 KM"></div>
             <div><label>Przebieg</label><input id="carMileage" type="number"></div>
-            <div class="full"><button type="submit">DODAJ SAMOCHÓD</button></div>
+            <div class="full" style="display:flex;gap:10px;flex-wrap:wrap"><button type="submit">DODAJ SAMOCHÓD</button><button type="button" class="dark" onclick="hideCustomerAddCarForm()">ANULUJ</button></div>
           </div>
         </form>
         <p id="customerCarMsg"></p>
@@ -1014,9 +1017,24 @@ async function loadCustomerOrderHistory(){
   }
 }
 
-async function loadCustomerCars(){
+function showCustomerAddCarForm(){
   const addBox=$("customerAddCarBox");
+  const addButton=$("customerAddCarButton");
   if(addBox)addBox.classList.remove("hide");
+  if(addButton)addButton.classList.add("hide");
+  const brand=$("carBrand");
+  if(brand)brand.focus();
+}
+
+function hideCustomerAddCarForm(){
+  const addBox=$("customerAddCarBox");
+  const addButton=$("customerAddCarButton");
+  if(addBox)addBox.classList.add("hide");
+  if(addButton)addButton.classList.remove("hide");
+}
+
+async function loadCustomerCars(){
+  hideCustomerAddCarForm();
 
   const r = await fetch("/api/customer/vehicles");
   if(r.status === 401){ location.href="/klient"; return; }
