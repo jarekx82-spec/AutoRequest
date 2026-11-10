@@ -769,7 +769,74 @@ if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
 
   return json({ok:true,reminders:r.results});
 }
+// Zmiana terminu przypomnienia
+if(/^\/api\/customer\/reminders\/\d+$/.test(url.pathname) && request.method==="PUT"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
+  const id=Number(url.pathname.split("/").pop());
+  const b=await request.json();
+  const d=clean(b.reminder_date);
+
+  if(!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)){
+    return json({ok:false,error:"Podaj prawidłową datę RRRR-MM-DD."},400);
+  }
+
+  const p=d.split("-").map(Number);
+  const dt=new Date(Date.UTC(p[0],p[1]-1,p[2]));
+
+  if(
+    dt.getUTCFullYear()!==p[0] ||
+    dt.getUTCMonth()!==p[1]-1 ||
+    dt.getUTCDate()!==p[2]
+  ){
+    return json({ok:false,error:"Podana data nie istnieje."},400);
+  }
+
+  const own=await env.DB.prepare(
+    "SELECT id FROM vehicle_reminders WHERE id=? AND customer_id=? AND active=1"
+  ).bind(id,u.customer_id).first();
+
+  if(!own){
+    return json({ok:false,error:"Nie znaleziono aktywnego przypomnienia."},404);
+  }
+
+  await env.DB.prepare(
+    "UPDATE vehicle_reminders SET reminder_date=? WHERE id=? AND customer_id=? AND active=1"
+  ).bind(d,id,u.customer_id).run();
+
+  return json({
+    ok:true,
+    reminder_id:id,
+    reminder_date:d
+  });
+}
+
+
+// Usunięcie przypomnienia
+if(/^\/api\/customer\/reminders\/\d+$/.test(url.pathname) && request.method==="DELETE"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const id=Number(url.pathname.split("/").pop());
+
+  const own=await env.DB.prepare(
+    "SELECT id FROM vehicle_reminders WHERE id=? AND customer_id=? AND active=1"
+  ).bind(id,u.customer_id).first();
+
+  if(!own){
+    return json({ok:false,error:"Nie znaleziono aktywnego przypomnienia."},404);
+  }
+
+  await env.DB.prepare(
+    "UPDATE vehicle_reminders SET active=0 WHERE id=? AND customer_id=? AND active=1"
+  ).bind(id,u.customer_id).run();
+
+  return json({
+    ok:true,
+    reminder_id:id
+  });
+}
 // Historia zakupow WYBRANEGO samochodu zalogowanego klienta
 if(/^\/api\/customer\/vehicles\/\d+\/purchase-history$/.test(url.pathname) && request.method==="GET"){
   const u=await customerAuth(request,env);
