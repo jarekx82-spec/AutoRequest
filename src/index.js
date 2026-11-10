@@ -678,7 +678,7 @@ if(url.pathname==="/api/customer/order-history" && request.method==="GET"){
     FROM requests r
     JOIN vehicles v ON v.id=r.vehicle_id
     JOIN businesses b ON b.id=r.business_id
-    WHERE r.customer_id=? AND r.status='COMPLETED'
+    WHERE r.customer_id=? AND r.status IN ('CONFIRMED','COMPLETED')
     ORDER BY r.updated_at DESC,r.id DESC
   `).bind(u.customer_id).all();
   return json({ok:true,orders:r.results});
@@ -718,7 +718,7 @@ if(/^\/api\/customer\/order-history\/\d+\/items$/.test(url.pathname) && request.
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
   const id=Number(url.pathname.split("/")[4]);
-  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? AND status='COMPLETED' LIMIT 1").bind(id,u.customer_id).first();
+  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? AND status IN ('CONFIRMED','COMPLETED') LIMIT 1").bind(id,u.customer_id).first();
   if(!owned)return json({ok:false,error:"Nie znaleziono zrealizowanego zamówienia."},404);
   const r=await env.DB.prepare(`SELECT id,part_name,part_number,quantity,unit_price,created_at FROM request_items WHERE request_id=? ORDER BY id ASC`).bind(id).all();
   return json({ok:true,items:r.results});
