@@ -75,6 +75,11 @@
       <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
     </div>
 
+    <div id="customerRemindersBox" class="box hide">
+      <h2 style="margin-top:0;">🔔 Przypomnienia</h2>
+      <div id="customerRemindersList"></div>
+    </div>
+
     <div id="customerCarsSection">
       <div class="box">
         <h2>Moje samochody</h2>
@@ -713,6 +718,53 @@ function openCustomerPanel(user){
     : "Klient";
   $("customerPanelName").textContent = "Witaj, " + name + ".";
   loadCustomerCars();
+  loadCustomerReminders();
+}
+
+
+async function loadCustomerReminders(){
+  const box=$("customerRemindersBox");
+  const list=$("customerRemindersList");
+  if(!box || !list)return;
+
+  try{
+    const r=await fetch("/api/customer/reminders");
+    if(r.status===401)return;
+
+    const d=await r.json();
+    if(!d.ok || !d.reminders || !d.reminders.length){
+      box.classList.add("hide");
+      list.innerHTML="";
+      return;
+    }
+
+    box.classList.remove("hide");
+    list.innerHTML=d.reminders.map(x=>{
+      const days=Number(x.days_left);
+      let status="";
+      if(days<0){
+        status=`<b style="color:#b91c1c">Termin minął ${Math.abs(days)} dni temu</b>`;
+      }else if(days===0){
+        status=`<b style="color:#b91c1c">Termin przypada dzisiaj</b>`;
+      }else if(days===1){
+        status=`<b>Termin jutro</b>`;
+      }else{
+        status=`<b>Pozostało ${days} dni</b>`;
+      }
+
+      return `
+        <div class="job" style="cursor:default">
+          <b>${esc(x.title || x.part_name || "Przypomnienie serwisowe")}</b><br>
+          Samochód: ${esc(x.brand)} ${esc(x.model)}<br>
+          ${x.part_number ? `Numer części: ${esc(x.part_number)}<br>` : ""}
+          Termin: ${esc(x.reminder_date)}<br>
+          ${status}
+        </div>
+      `;
+    }).join("");
+  }catch(e){
+    box.classList.add("hide");
+  }
 }
 
 function showCustomerSection(section){
