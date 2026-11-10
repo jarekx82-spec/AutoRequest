@@ -678,10 +678,120 @@ if(url.pathname==="/api/customer/order-history" && request.method==="GET"){
     FROM requests r
     JOIN vehicles v ON v.id=r.vehicle_id
     JOIN businesses b ON b.id=r.business_id
-    WHERE r.customer_id=? AND r.status IN ('CONFIRMED','COMPLETED')
+    WHERE r.customer_id=? AND r.status='COMPLETED'
     ORDER BY r.updated_at DESC,r.id DESC
   `).bind(u.customer_id).all();
   return json({ok:true,orders:r.results});
+}
+
+
+// Historia zakupow WYBRANEGO samochodu zalogowanego klienta
+if(/^\/api\/customer\/vehicles\/\d+\/purchase-history$/.test(url.pathname) && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const vehicleId=Number(url.pathname.split("/")[4]);
+
+  const vehicle=await env.DB.prepare(`
+    SELECT id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage
+    FROM vehicles
+    WHERE id=? AND customer_id=?
+    LIMIT 1
+  `).bind(vehicleId,u.customer_id).first();
+
+  if(!vehicle)return json({ok:false,error:"Nie znaleziono samochodu."},404);
+
+  const items=await env.DB.prepare(`
+    SELECT
+      ri.id AS request_item_id,ri.request_id,ri.part_name,ri.part_number,
+      ri.quantity,ri.unit_price,r.request_number,r.updated_at AS purchase_date,
+      b.name AS business_name,vr.id AS reminder_id,vr.reminder_type,
+      vr.reminder_date,vr.active AS reminder_active
+    FROM requests r
+    JOIN request_items ri ON ri.request_id=r.id
+    JOIN businesses b ON b.id=r.business_id
+    LEFT JOIN vehicle_reminders vr
+      ON vr.request_item_id=ri.id
+     AND vr.customer_id=?
+     AND vr.vehicle_id=?
+     AND vr.active=1
+    WHERE r.customer_id=?
+      AND r.vehicle_id=?
+      AND r.status='COMPLETED'
+    ORDER BY r.updated_at DESC,ri.id DESC
+  `).bind(u.customer_id,vehicleId,u.customer_id,vehicleId).all();
+
+  return json({ok:true,vehicle,items:items.results});
+}
+
+// Dodanie / odnowienie przypomnienia za rok dla pozycji z historii pojazdu
+if(/^\/api\/customer\/vehicles\/\d+\/reminders$/.test(url.pathname) && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const vehicleId=Number(url.pathname.split("/")[4]);
+  const body=await request.json();
+  const requestItemId=Number(body.request_item_id);
+
+  if(!requestItemId)return json({ok:false,error:"Brak pozycji części."},400);
+
+  const item=await env.DB.prepare(`
+    SELECT ri.id,ri.request_id,ri.part_name,ri.part_number,r.updated_at AS purchase_date
+    FROM request_items ri
+    JOIN requests r ON r.id=ri.request_id
+    WHERE ri.id=? AND r.customer_id=? AND r.vehicle_id=? AND r.status='COMPLETED'
+    LIMIT 1
+  `).bind(requestItemId,u.customer_id,vehicleId).first();
+
+  if(!item)return json({ok:false,error:"Nie znaleziono tej części w historii samochodu."},404);
+
+  const reminderType=clean(body.reminder_type)||"YEARLY";
+  const baseDate=new Date(item.purchase_date || Date.now());
+  if(Number.isNaN(baseDate.getTime()))return json({ok:false,error:"Nie udało się ustalić daty zakupu."},400);
+
+  baseDate.setFullYear(baseDate.getFullYear()+1);
+  const reminderDate=baseDate.toISOString().slice(0,10);
+
+  await env.DB.prepare(`
+    UPDATE vehicle_reminders
+    SET active=0
+    WHERE customer_id=? AND vehicle_id=? AND request_item_id=? AND active=1
+  `).bind(u.customer_id,vehicleId,requestItemId).run();
+
+  const rr=await env.DB.prepare(`
+    INSERT INTO vehicle_reminders(
+      customer_id,vehicle_id,request_id,request_item_id,
+      reminder_type,title,reminder_date,active
+    ) VALUES(?,?,?,?,?,?,?,1)
+  `).bind(
+    u.customer_id,vehicleId,item.request_id,requestItemId,
+    reminderType,"Wymiana: "+item.part_name,reminderDate
+  ).run();
+
+  return json({ok:true,reminder_id:rr.meta.last_row_id,reminder_date:reminderDate},201);
+}
+
+// Lista aktywnych przypomnien dla wybranego samochodu
+if(/^\/api\/customer\/vehicles\/\d+\/reminders$/.test(url.pathname) && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const vehicleId=Number(url.pathname.split("/")[4]);
+
+  const vehicle=await env.DB.prepare(`
+    SELECT id FROM vehicles WHERE id=? AND customer_id=? LIMIT 1
+  `).bind(vehicleId,u.customer_id).first();
+
+  if(!vehicle)return json({ok:false,error:"Nie znaleziono samochodu."},404);
+
+  const r=await env.DB.prepare(`
+    SELECT id,request_id,request_item_id,reminder_type,title,reminder_date,active,created_at
+    FROM vehicle_reminders
+    WHERE customer_id=? AND vehicle_id=? AND active=1
+    ORDER BY reminder_date ASC,id DESC
+  `).bind(u.customer_id,vehicleId).all();
+
+  return json({ok:true,reminders:r.results});
 }
 
 // Zamowienia firmy: potwierdzone i zrealizowane
@@ -718,7 +828,7 @@ if(/^\/api\/customer\/order-history\/\d+\/items$/.test(url.pathname) && request.
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
   const id=Number(url.pathname.split("/")[4]);
-  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? AND status IN ('CONFIRMED','COMPLETED') LIMIT 1").bind(id,u.customer_id).first();
+  const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? AND status='COMPLETED' LIMIT 1").bind(id,u.customer_id).first();
   if(!owned)return json({ok:false,error:"Nie znaleziono zrealizowanego zamówienia."},404);
   const r=await env.DB.prepare(`SELECT id,part_name,part_number,quantity,unit_price,created_at FROM request_items WHERE request_id=? ORDER BY id ASC`).bind(id).all();
   return json({ok:true,items:r.results});
