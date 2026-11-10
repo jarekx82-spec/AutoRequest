@@ -856,35 +856,30 @@ async function loadCustomerReminders(){
 }
 
 async function loadAllCustomerReminders(){
-  const el=$("customerAllRemindersList");
-  if(!el)return;
-  el.textContent="Ładowanie...";
-
+  const el=$("customerAllRemindersList"); if(!el)return; el.textContent="Ładowanie...";
   try{
-    const r=await fetch("/api/customer/reminders?all=1");
-    const d=await r.json();
+    const r=await fetch("/api/customer/reminders?all=1"),d=await r.json();
     if(!d.ok){el.textContent=d.error||"Nie udało się pobrać przypomnień.";return;}
-    if(!d.reminders || !d.reminders.length){el.textContent="Nie masz aktywnych przypomnień.";return;}
-
+    if(!d.reminders?.length){el.textContent="Nie masz aktywnych przypomnień.";return;}
     el.innerHTML=d.reminders.map(x=>{
       const days=Number(x.days_left);
-      let status="";
-      if(days<0) status=`<b style="color:#b91c1c">Termin minął ${Math.abs(days)} dni temu</b>`;
-      else if(days===0) status=`<b style="color:#b91c1c">Termin przypada dzisiaj</b>`;
-      else if(days===1) status=`<b>Termin jutro</b>`;
-      else status=`<b>Do terminu: ${days} dni</b>`;
-
-      return `<div class="job" style="cursor:default">
-        <b>${esc(x.title || x.part_name || "Przypomnienie serwisowe")}</b><br>
-        Samochód: ${esc(x.brand)} ${esc(x.model)}<br>
-        ${x.part_number ? `Numer części: ${esc(x.part_number)}<br>` : ""}
-        Termin: ${esc(x.reminder_date)}<br>
-        ${status}
-      </div>`;
+      const status=days<0?`<b style="color:#b91c1c">Termin minął ${Math.abs(days)} dni temu</b>`:days===0?`<b style="color:#b91c1c">Termin przypada dzisiaj</b>`:days===1?`<b>Termin jutro</b>`:`<b>Do terminu: ${days} dni</b>`;
+      return `<div class="job" style="cursor:default"><b>${esc(x.title||x.part_name||"Przypomnienie serwisowe")}</b><br>Samochód: ${esc(x.brand)} ${esc(x.model)}<br>${x.part_number?`Numer części: ${esc(x.part_number)}<br>`:""}Termin: ${esc(x.reminder_date)}<br>${status}<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button type="button" onclick="showReminderDateEditor(${x.id})">ZMIEŃ TERMIN</button><button type="button" class="dark" onclick="deleteCustomerReminder(${x.id})">USUŃ PRZYPOMNIENIE</button></div><div id="reminderEdit_${x.id}" class="hide" style="margin-top:12px"><label>Nowy termin</label><input type="date" id="reminderDate_${x.id}" value="${esc(x.reminder_date)}"><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" onclick="saveCustomerReminderDate(${x.id})">ZAPISZ TERMIN</button><button type="button" class="dark" onclick="$('reminderEdit_${x.id}').classList.add('hide')">ANULUJ</button></div></div></div>`;
     }).join("");
-  }catch(e){
-    el.textContent="Nie udało się pobrać przypomnień.";
-  }
+  }catch(e){el.textContent="Nie udało się pobrać przypomnień.";}
+}
+function showReminderDateEditor(id){const box=$("reminderEdit_"+id);if(box)box.classList.remove("hide");}
+async function saveCustomerReminderDate(id){
+  const input=$("reminderDate_"+id);if(!input?.value){alert("Wybierz nowy termin.");return;}
+  const r=await fetch("/api/customer/reminders/"+id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({reminder_date:input.value})}),d=await r.json();
+  if(!d.ok){alert(d.error||"Nie udało się zmienić terminu.");return;}
+  await loadAllCustomerReminders();await loadCustomerReminders();alert("Termin przypomnienia został zmieniony.");
+}
+async function deleteCustomerReminder(id){
+  if(!confirm("Czy na pewno chcesz usunąć to przypomnienie?"))return;
+  const r=await fetch("/api/customer/reminders/"+id,{method:"DELETE"}),d=await r.json();
+  if(!d.ok){alert(d.error||"Nie udało się usunąć przypomnienia.");return;}
+  await loadAllCustomerReminders();await loadCustomerReminders();alert("Przypomnienie zostało usunięte.");
 }
 
 function setActiveCustomerTab(section){
