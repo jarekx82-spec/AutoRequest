@@ -840,7 +840,7 @@ async function loadCustomerCars(){
 
   const cars = d.vehicles || [];
   $("customerCarsList").innerHTML = cars.length ? cars.map(v => `
-    <div class="job" style="cursor:default">
+    <div class="job" onclick="openCustomerVehicleHistory(${v.id})">
       <b>${esc(v.brand)} ${esc(v.model)}</b><br>
       VIN: ${esc(v.vin || "—")}<br>
       Rok: ${esc(v.production_year || "—")}<br>
@@ -856,6 +856,95 @@ async function loadCustomerCars(){
         `<option value="${v.id}">${esc(v.brand)} ${esc(v.model)}${v.engine_code ? " — "+esc(v.engine_code) : ""}${v.vin ? " — VIN "+esc(v.vin) : ""}</option>`
       ).join("")
     : '<option value="">Najpierw dodaj samochód</option>';
+}
+
+
+function isOilOrFilterPart(name){
+  const n=String(name||"").toLowerCase();
+  return n.includes("olej") || n.includes("filtr");
+}
+
+function formatPurchaseDate(value){
+  if(!value)return "—";
+  const d=new Date(String(value).replace(" ","T")+"Z");
+  if(Number.isNaN(d.getTime()))return esc(value);
+  return d.toLocaleDateString("pl-PL");
+}
+
+async function openCustomerVehicleHistory(vehicleId){
+  const r=await fetch("/api/customer/vehicles/"+vehicleId+"/purchase-history");
+  const d=await r.json();
+
+  if(!d.ok){
+    alert(d.error||"Nie udało się pobrać historii samochodu.");
+    return;
+  }
+
+  const v=d.vehicle;
+  const items=d.items||[];
+
+  $("customerCarsList").innerHTML=`
+    <button type="button" class="dark" onclick="loadCustomerCars()">← WRÓĆ DO MOICH SAMOCHODÓW</button>
+
+    <div class="box" style="margin-top:14px">
+      <h2 style="margin-top:0">${esc(v.brand)} ${esc(v.model)}</h2>
+      <b>VIN:</b> ${esc(v.vin||"—")}<br>
+      <b>Rok:</b> ${esc(v.production_year||"—")}<br>
+      <b>Silnik:</b> ${esc(v.engine_capacity||"—")} ${esc(v.engine_code||"")}
+    </div>
+
+    <h3>Historia pojazdu</h3>
+
+    ${items.length ? items.map(i=>{
+      const total=i.unit_price==null ? null : Number(i.unit_price)*Number(i.quantity||1);
+      const canRemind=isOilOrFilterPart(i.part_name);
+
+      return `
+        <div class="job" style="cursor:default">
+          <b>${esc(i.part_name||"—")}</b><br>
+          <b>Numer części:</b> ${esc(i.part_number||"—")}<br>
+          <b>Data zakupu:</b> ${formatPurchaseDate(i.purchase_date)}<br>
+          <b>Kwota:</b> ${total==null?"—":total.toFixed(2)+" zł"}
+          ${Number(i.quantity||1)>1 ? `<br><b>Ilość:</b> ${esc(i.quantity)}` : ""}
+
+          ${i.reminder_date ? `
+            <div class="msg">
+              🔔 Przypomnienie ustawione na: <b>${esc(i.reminder_date)}</b>
+            </div>
+          ` : canRemind ? `
+            <div style="margin-top:12px">
+              <button type="button" onclick="setYearReminder(${vehicleId},${i.request_item_id})">
+                PRZYPOMNIJ ZA ROK
+              </button>
+            </div>
+          ` : ""}
+        </div>
+      `;
+    }).join("") : "Brak zrealizowanych zakupów dla tego samochodu."}
+  `;
+}
+
+async function setYearReminder(vehicleId,requestItemId){
+  if(!confirm("Ustawić przypomnienie za rok?"))return;
+
+  const r=await fetch("/api/customer/vehicles/"+vehicleId+"/reminders",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+      request_item_id:requestItemId,
+      reminder_type:"YEARLY"
+    })
+  });
+
+  const d=await r.json();
+
+  if(!d.ok){
+    alert(d.error||"Nie udało się ustawić przypomnienia.");
+    return;
+  }
+
+  alert("Przypomnienie ustawione na "+d.reminder_date+".");
+  await openCustomerVehicleHistory(vehicleId);
 }
 
 async function customerLogout(){
