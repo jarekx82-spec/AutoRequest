@@ -70,10 +70,10 @@
       <button type="button" class="dark" onclick="customerLogout()">WYLOGUJ</button>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
-      <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
-      <button type="button" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
-      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
-      <button type="button" onclick="showCustomerSection('reminders')">🔔 MOJE PRZYPOMNIENIA</button>
+      <button type="button" id="customerTabCars" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
+      <button type="button" id="customerTabRequests" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
+      <button type="button" id="customerTabRequest" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
+      <button type="button" id="customerTabReminders" onclick="showCustomerSection('reminders')">🔔 MOJE PRZYPOMNIENIA</button>
     </div>
 
     <div id="customerRemindersBox" class="box hide">
@@ -726,7 +726,7 @@ function openCustomerPanel(user){
     ? (user.name || user.email || user.phone)
     : "Klient";
   $("customerPanelName").textContent = "Witaj, " + name + ".";
-  loadCustomerCars();
+  showCustomerSection("cars");
   loadCustomerReminders();
 }
 
@@ -808,7 +808,23 @@ async function loadAllCustomerReminders(){
   }
 }
 
+function setActiveCustomerTab(section){
+  const tabs={
+    cars:$("customerTabCars"),
+    requests:$("customerTabRequests"),
+    request:$("customerTabRequest"),
+    reminders:$("customerTabReminders")
+  };
+
+  Object.values(tabs).forEach(btn=>{
+    if(btn)btn.classList.remove("dark");
+  });
+
+  if(tabs[section])tabs[section].classList.add("dark");
+}
+
 function showCustomerSection(section){
+  setActiveCustomerTab(section);
   $("customerCarsSection").classList.toggle("hide", section !== "cars");
   $("customerRequestsSection").classList.toggle("hide", section !== "requests");
   $("customerRequestSection").classList.toggle("hide", section !== "request");
