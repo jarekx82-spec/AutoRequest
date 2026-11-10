@@ -408,6 +408,25 @@ async function loadCustomers(){
       <b>Telefon:</b> ${esc(c.phone || "—")}<br>
       <b>E-mail:</b> ${esc(c.email || "—")}<br>
       <b>Miasto:</b> ${esc(c.city || "—")}
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" onclick="showEditCustomer(${c.id})">EDYTUJ KLIENTA</button>
+        <button type="button" class="dark" onclick="deleteCustomer(${c.id},'${esc(c.name).replaceAll("'","&#39;")}')">USUŃ KLIENTA</button>
+      </div>
+    </div>
+
+    <div id="editCustomerBox" class="box hide">
+      <h3>Edytuj klienta</h3>
+      <div class="grid">
+        <div><label>Imię / nazwa *</label><input id="editCustomerName" value="${esc(c.name||"")}"></div>
+        <div><label>Telefon *</label><input id="editCustomerPhone" value="${esc(c.phone||"")}"></div>
+        <div><label>E-mail</label><input id="editCustomerEmail" type="email" value="${esc(c.email||"")}"></div>
+        <div><label>Miasto</label><input id="editCustomerCity" value="${esc(c.city||"")}"></div>
+        <div class="full" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" onclick="saveCustomer(${c.id})">ZAPISZ ZMIANY</button>
+          <button type="button" class="dark" onclick="$('editCustomerBox').classList.add('hide')">ANULUJ</button>
+        </div>
+      </div>
+      <p id="editCustomerMsg"></p>
     </div>
 
     <h3>Samochody</h3>
@@ -439,6 +458,66 @@ async function loadCustomers(){
     }
   `;
 }
+
+function showEditCustomer(id){
+  const box=$("editCustomerBox");
+  if(box)box.classList.remove("hide");
+}
+
+async function saveCustomer(id){
+  const msg=$("editCustomerMsg");
+  if(msg)msg.textContent="Zapisywanie...";
+
+  const body={
+    name:$("editCustomerName").value.trim(),
+    phone:$("editCustomerPhone").value.trim(),
+    email:$("editCustomerEmail").value.trim(),
+    city:$("editCustomerCity").value.trim()
+  };
+
+  if(!body.name || !body.phone){
+    if(msg)msg.textContent="Imię / nazwa i telefon są wymagane.";
+    return;
+  }
+
+  const r=await fetch("/api/company/customers/"+id,{
+    method:"PUT",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  const d=await r.json();
+
+  if(!d.ok){
+    if(msg)msg.textContent=d.error||"Nie udało się zapisać zmian.";
+    return;
+  }
+
+  alert("Dane klienta zostały zmienione.");
+  await openCustomer(id);
+}
+
+async function deleteCustomer(id,name){
+  const ok=confirm(
+    "Czy na pewno chcesz TRWALE usunąć klienta "+name+
+    " oraz jego samochody, zapytania, wiadomości, historię i przypomnienia?\\n\\nTej operacji nie można cofnąć."
+  );
+  if(!ok)return;
+
+  const second=confirm("Ostatnie potwierdzenie: usunąć klienta "+name+" na stałe?");
+  if(!second)return;
+
+  const r=await fetch("/api/company/customers/"+id,{method:"DELETE"});
+  const d=await r.json();
+
+  if(!d.ok){
+    alert(d.error||"Nie udało się usunąć klienta.");
+    return;
+  }
+
+  alert("Klient został trwale usunięty.");
+  await loadCustomers();
+}
+
   async function openRequestFromCustomer(id){
   ["requestsTab","messagesTab","historyTab","customersTab"].forEach(tabId=>{
     $(tabId).classList.add("hide");
