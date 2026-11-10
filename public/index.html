@@ -72,7 +72,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
       <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
       <button type="button" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
-      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button> <button type="button" onclick="showCustomerSection('history')">HISTORIA ZAKUPÓW</button>
+      <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
     </div>
 
     <div id="customerCarsSection">
@@ -81,7 +81,7 @@
         <div id="customerCarsList">Ładowanie samochodów...</div>
       </div>
 
-      <div class="box">
+      <div class="box" id="customerAddCarBox">
         <h3>Dodaj samochód</h3>
         <form id="customerCarForm">
           <div class="grid">
@@ -830,6 +830,9 @@ async function loadCustomerOrderHistory(){
 }
 
 async function loadCustomerCars(){
+  const addBox=$("customerAddCarBox");
+  if(addBox)addBox.classList.remove("hide");
+
   const r = await fetch("/api/customer/vehicles");
   if(r.status === 401){ location.href="/klient"; return; }
   const d = await r.json();
@@ -872,6 +875,9 @@ function formatPurchaseDate(value){
 }
 
 async function openCustomerVehicleHistory(vehicleId){
+  const addBox=$("customerAddCarBox");
+  if(addBox)addBox.classList.add("hide");
+
   const r=await fetch("/api/customer/vehicles/"+vehicleId+"/purchase-history");
   const d=await r.json();
 
