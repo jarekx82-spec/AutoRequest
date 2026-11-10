@@ -685,6 +685,41 @@ if(url.pathname==="/api/customer/order-history" && request.method==="GET"){
 }
 
 
+
+// Powiadomienia / przypomnienia zalogowanego klienta
+if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const r=await env.DB.prepare(`
+    SELECT
+      vr.id,
+      vr.vehicle_id,
+      vr.request_id,
+      vr.request_item_id,
+      vr.reminder_type,
+      vr.title,
+      vr.reminder_date,
+      vr.active,
+      v.brand,
+      v.model,
+      v.vin,
+      ri.part_name,
+      ri.part_number,
+      CAST(julianday(vr.reminder_date)-julianday(date('now')) AS INTEGER) AS days_left
+    FROM vehicle_reminders vr
+    JOIN vehicles v ON v.id=vr.vehicle_id
+    LEFT JOIN request_items ri ON ri.id=vr.request_item_id
+    WHERE vr.customer_id=?
+      AND v.customer_id=?
+      AND vr.active=1
+      AND date(vr.reminder_date)<=date('now','+30 days')
+    ORDER BY date(vr.reminder_date) ASC,vr.id DESC
+  `).bind(u.customer_id,u.customer_id).all();
+
+  return json({ok:true,reminders:r.results});
+}
+
 // Historia zakupow WYBRANEGO samochodu zalogowanego klienta
 if(/^\/api\/customer\/vehicles\/\d+\/purchase-history$/.test(url.pathname) && request.method==="GET"){
   const u=await customerAuth(request,env);
