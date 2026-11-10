@@ -691,6 +691,9 @@ if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
+  const showAll=url.searchParams.get("all")==="1";
+  const dateFilter=showAll ? "" : "AND date(vr.reminder_date)<=date(\'now\',\'+30 days\')";
+
   const r=await env.DB.prepare(`
     SELECT
       vr.id,
@@ -713,7 +716,7 @@ if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
     WHERE vr.customer_id=?
       AND v.customer_id=?
       AND vr.active=1
-      AND date(vr.reminder_date)<=date('now','+30 days')
+      ${dateFilter}
     ORDER BY date(vr.reminder_date) ASC,vr.id DESC
   `).bind(u.customer_id,u.customer_id).all();
 
