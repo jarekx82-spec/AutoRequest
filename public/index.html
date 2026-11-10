@@ -73,6 +73,7 @@
       <button type="button" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
       <button type="button" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
       <button type="button" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
+      <button type="button" onclick="showCustomerSection('reminders')">🔔 MOJE PRZYPOMNIENIA</button>
     </div>
 
     <div id="customerRemindersBox" class="box hide">
@@ -127,6 +128,14 @@
         <h2>Historia zakupów</h2>
         <p>Zrealizowane zakupy części przypisane do Twoich samochodów.</p>
         <div id="customerOrderHistory">Ładowanie...</div>
+      </div>
+    </div>
+
+    <div id="customerAllRemindersSection" class="hide">
+      <div class="box">
+        <h2>🔔 Moje przypomnienia</h2>
+        <p>Wszystkie aktywne przypomnienia zapisane dla Twoich samochodów.</p>
+        <div id="customerAllRemindersList">Ładowanie...</div>
       </div>
     </div>
 
@@ -767,15 +776,49 @@ async function loadCustomerReminders(){
   }
 }
 
+async function loadAllCustomerReminders(){
+  const el=$("customerAllRemindersList");
+  if(!el)return;
+  el.textContent="Ładowanie...";
+
+  try{
+    const r=await fetch("/api/customer/reminders?all=1");
+    const d=await r.json();
+    if(!d.ok){el.textContent=d.error||"Nie udało się pobrać przypomnień.";return;}
+    if(!d.reminders || !d.reminders.length){el.textContent="Nie masz aktywnych przypomnień.";return;}
+
+    el.innerHTML=d.reminders.map(x=>{
+      const days=Number(x.days_left);
+      let status="";
+      if(days<0) status=`<b style="color:#b91c1c">Termin minął ${Math.abs(days)} dni temu</b>`;
+      else if(days===0) status=`<b style="color:#b91c1c">Termin przypada dzisiaj</b>`;
+      else if(days===1) status=`<b>Termin jutro</b>`;
+      else status=`<b>Do terminu: ${days} dni</b>`;
+
+      return `<div class="job" style="cursor:default">
+        <b>${esc(x.title || x.part_name || "Przypomnienie serwisowe")}</b><br>
+        Samochód: ${esc(x.brand)} ${esc(x.model)}<br>
+        ${x.part_number ? `Numer części: ${esc(x.part_number)}<br>` : ""}
+        Termin: ${esc(x.reminder_date)}<br>
+        ${status}
+      </div>`;
+    }).join("");
+  }catch(e){
+    el.textContent="Nie udało się pobrać przypomnień.";
+  }
+}
+
 function showCustomerSection(section){
   $("customerCarsSection").classList.toggle("hide", section !== "cars");
   $("customerRequestsSection").classList.toggle("hide", section !== "requests");
   $("customerRequestSection").classList.toggle("hide", section !== "request");
   $("customerHistorySection").classList.toggle("hide", section !== "history");
+  $("customerAllRemindersSection").classList.toggle("hide", section !== "reminders");
   if(section === "cars") loadCustomerCars();
   if(section === "requests"){ closeCustomerConversation(); loadCustomerRequests(); }
   if(section === "request") loadCustomerCars();
   if(section === "history") loadCustomerOrderHistory();
+  if(section === "reminders") loadAllCustomerReminders();
 }
 
 let customerConversationRequestId=0;
