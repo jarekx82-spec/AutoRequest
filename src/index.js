@@ -328,7 +328,54 @@ if(customer){
     requests:requests.results
   });
 }
-  if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET"){
+  // Edycja klienta przez firmę
+if(/^\/api\/company\/customers\/\d+$/.test(url.pathname) && request.method==="PUT"){
+  const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/").pop());
+  const own=await env.DB.prepare(`SELECT c.id FROM customers c JOIN requests r ON r.customer_id=c.id WHERE c.id=? AND r.business_id=? LIMIT 1`).bind(id,u.business_id).first();
+  if(!own)return json({ok:false,error:"Nie znaleziono klienta."},404);
+  const b=await request.json(),name=clean(b.name),phone=clean(b.phone),email=clean(b.email),city=clean(b.city);
+  if(!name||!phone)return json({ok:false,error:"Imię/nazwa i telefon są wymagane."},400);
+  const dup=await env.DB.prepare("SELECT id FROM customers WHERE id<>? AND phone=? LIMIT 1").bind(id,phone).first();
+  if(dup)return json({ok:false,error:"Inny klient ma już ten numer telefonu."},409);
+  const cu=await env.DB.prepare("SELECT id FROM customer_users WHERE customer_id=? ORDER BY id ASC LIMIT 1").bind(id).first();
+  if(cu){
+    const conflict=await env.DB.prepare(`SELECT id FROM customer_users WHERE id<>? AND (phone=? OR (? IS NOT NULL AND LOWER(email)=LOWER(?))) LIMIT 1`).bind(cu.id,phone,email,email).first();
+    if(conflict)return json({ok:false,error:"Ten telefon lub e-mail jest już używany przez inne konto klienta."},409);
+  }
+  await env.DB.prepare("UPDATE customers SET name=?,phone=?,email=?,city=? WHERE id=?").bind(name,phone,email,city,id).run();
+  if(cu)await env.DB.prepare("UPDATE customer_users SET phone=?,email=? WHERE customer_id=?").bind(phone,email,id).run();
+  return json({ok:true});
+}
+
+// Trwałe usunięcie klienta testowego i jego danych
+if(/^\/api\/company\/customers\/\d+$/.test(url.pathname) && request.method==="DELETE"){
+  const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const id=Number(url.pathname.split("/").pop());
+  const own=await env.DB.prepare(`SELECT c.id FROM customers c JOIN requests r ON r.customer_id=c.id WHERE c.id=? AND r.business_id=? LIMIT 1`).bind(id,u.business_id).first();
+  if(!own)return json({ok:false,error:"Nie znaleziono klienta."},404);
+  const other=await env.DB.prepare("SELECT id FROM requests WHERE customer_id=? AND business_id<>? LIMIT 1").bind(id,u.business_id).first();
+  if(other)return json({ok:false,error:"Nie można trwale usunąć klienta, ponieważ ma historię także w innej firmie."},409);
+
+  const reqs=await env.DB.prepare("SELECT id FROM requests WHERE customer_id=?").bind(id).all();
+  for(const r of reqs.results){
+    await env.DB.prepare("DELETE FROM messages WHERE request_id=?").bind(r.id).run();
+    await env.DB.prepare("DELETE FROM responses WHERE request_id=?").bind(r.id).run();
+    await env.DB.prepare("DELETE FROM vehicle_reminders WHERE request_id=?").bind(r.id).run();
+    await env.DB.prepare("DELETE FROM request_items WHERE request_id=?").bind(r.id).run();
+  }
+  await env.DB.prepare("DELETE FROM vehicle_reminders WHERE customer_id=?").bind(id).run();
+  await env.DB.prepare("DELETE FROM requests WHERE customer_id=?").bind(id).run();
+  const users=await env.DB.prepare("SELECT id FROM customer_users WHERE customer_id=?").bind(id).all();
+  for(const x of users.results)await env.DB.prepare("DELETE FROM customer_sessions WHERE user_id=?").bind(x.id).run();
+  await env.DB.prepare("DELETE FROM customer_users WHERE customer_id=?").bind(id).run();
+  await env.DB.prepare("DELETE FROM service_history WHERE vehicle_id IN (SELECT id FROM vehicles WHERE customer_id=?)").bind(id).run();
+  await env.DB.prepare("DELETE FROM vehicles WHERE customer_id=?").bind(id).run();
+  await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(id).run();
+  return json({ok:true});
+}
+
+if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET"){
   const u=await auth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
