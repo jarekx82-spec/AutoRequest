@@ -769,7 +769,10 @@ if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
   const showAll=url.searchParams.get("all")==="1";
-  const dateFilter=showAll ? "" : "AND date(vr.reminder_date)<=date(\'now\',\'+30 days\')";
+  const dateFilter=showAll ? "" : `AND (
+    (vr.reminder_date IS NOT NULL AND date(vr.reminder_date)<=date('now','+30 days'))
+    OR (vr.reminder_mileage IS NOT NULL AND v.mileage IS NOT NULL AND CAST(v.mileage AS INTEGER)>=vr.reminder_mileage)
+  )`;
 
   const r=await env.DB.prepare(`
     SELECT
@@ -780,13 +783,19 @@ if(url.pathname==="/api/customer/reminders" && request.method==="GET"){
       vr.reminder_type,
       vr.title,
       vr.reminder_date,
+      vr.base_mileage,
+      vr.reminder_mileage,
       vr.active,
       v.brand,
       v.model,
       v.vin,
+      v.mileage AS current_mileage,
       ri.part_name,
       ri.part_number,
-      CAST(julianday(vr.reminder_date)-julianday(date('now')) AS INTEGER) AS days_left
+      CASE WHEN vr.reminder_date IS NULL THEN NULL
+        ELSE CAST(julianday(vr.reminder_date)-julianday(date('now')) AS INTEGER) END AS days_left,
+      CASE WHEN vr.reminder_mileage IS NULL OR v.mileage IS NULL THEN NULL
+        ELSE vr.reminder_mileage-CAST(v.mileage AS INTEGER) END AS mileage_left
     FROM vehicle_reminders vr
     JOIN vehicles v ON v.id=vr.vehicle_id
     LEFT JOIN request_items ri ON ri.id=vr.request_item_id
@@ -888,7 +897,7 @@ if(/^\/api\/customer\/vehicles\/\d+\/purchase-history$/.test(url.pathname) && re
       ri.id AS request_item_id,ri.request_id,ri.part_name,ri.part_number,
       ri.quantity,ri.unit_price,r.request_number,r.updated_at AS purchase_date,
       b.name AS business_name,vr.id AS reminder_id,vr.reminder_type,
-      vr.reminder_date,vr.active AS reminder_active
+      vr.reminder_date,vr.base_mileage,vr.reminder_mileage,vr.active AS reminder_active
     FROM requests r
     JOIN request_items ri ON ri.request_id=r.id
     JOIN businesses b ON b.id=r.business_id
@@ -934,23 +943,44 @@ if(/^\/api\/customer\/vehicles\/\d+\/reminders$/.test(url.pathname) && request.m
   baseDate.setFullYear(baseDate.getFullYear()+1);
   const reminderDate=baseDate.toISOString().slice(0,10);
 
+  const vehicle=await env.DB.prepare("SELECT mileage FROM vehicles WHERE id=? AND customer_id=? LIMIT 1")
+    .bind(vehicleId,u.customer_id).first();
+
+  const baseMileage=vehicle && vehicle.mileage!==null && String(vehicle.mileage).trim()!==""
+    ? Number(vehicle.mileage) : null;
+
+  let mileageInterval=null;
+  if(body.mileage_interval!==null && body.mileage_interval!==undefined && String(body.mileage_interval).trim()!==""){
+    mileageInterval=Number(body.mileage_interval);
+    if(!Number.isFinite(mileageInterval)||mileageInterval<=0)
+      return json({ok:false,error:"Interwał przebiegu musi być większy od 0 km."},400);
+    mileageInterval=Math.round(mileageInterval);
+  }
+
+  const reminderMileage=(baseMileage!==null && mileageInterval!==null)
+    ? Math.round(baseMileage)+mileageInterval : null;
+
   await env.DB.prepare(`
-    UPDATE vehicle_reminders
-    SET active=0
+    UPDATE vehicle_reminders SET active=0
     WHERE customer_id=? AND vehicle_id=? AND request_item_id=? AND active=1
   `).bind(u.customer_id,vehicleId,requestItemId).run();
 
   const rr=await env.DB.prepare(`
     INSERT INTO vehicle_reminders(
       customer_id,vehicle_id,request_id,request_item_id,
-      reminder_type,title,reminder_date,active
-    ) VALUES(?,?,?,?,?,?,?,1)
+      reminder_type,title,reminder_date,base_mileage,reminder_mileage,active
+    ) VALUES(?,?,?,?,?,?,?,?,?,1)
   `).bind(
     u.customer_id,vehicleId,item.request_id,requestItemId,
-    reminderType,"Wymiana: "+item.part_name,reminderDate
+    reminderType,"Wymiana: "+item.part_name,reminderDate,
+    baseMileage===null?null:Math.round(baseMileage),reminderMileage
   ).run();
 
-  return json({ok:true,reminder_id:rr.meta.last_row_id,reminder_date:reminderDate},201);
+  return json({
+    ok:true,reminder_id:rr.meta.last_row_id,reminder_date:reminderDate,
+    base_mileage:baseMileage===null?null:Math.round(baseMileage),
+    reminder_mileage:reminderMileage
+  },201);
 }
 
 // Lista aktywnych przypomnien dla wybranego samochodu
@@ -967,7 +997,7 @@ if(/^\/api\/customer\/vehicles\/\d+\/reminders$/.test(url.pathname) && request.m
   if(!vehicle)return json({ok:false,error:"Nie znaleziono samochodu."},404);
 
   const r=await env.DB.prepare(`
-    SELECT id,request_id,request_item_id,reminder_type,title,reminder_date,active,created_at
+    SELECT id,request_id,request_item_id,reminder_type,title,reminder_date,base_mileage,reminder_mileage,active,created_at
     FROM vehicle_reminders
     WHERE customer_id=? AND vehicle_id=? AND active=1
     ORDER BY reminder_date ASC,id DESC
