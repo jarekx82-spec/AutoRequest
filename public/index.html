@@ -1,4 +1,4 @@
-<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AutoRequest</title>
+a<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AutoRequest</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#f4f6f8;font-family:Arial;color:#17202a}header{background:#111827;color:#fff;padding:20px;font-size:22px;font-weight:bold}main{max-width:950px;margin:25px auto;padding:0 16px}.card{background:#fff;padding:24px;border-radius:15px;margin-bottom:18px;box-shadow:0 4px 15px #0001}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:bold;margin-bottom:5px}input,select,textarea{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:8px}textarea{min-height:90px}button{border:0;border-radius:9px;padding:12px 16px;font-weight:bold;cursor:pointer;background:#dc2626;color:#fff}.dark{background:#111827}.hide{display:none}.msg{padding:12px;background:#dcfce7;border-radius:8px;margin-top:12px}.job{border:1px solid #ddd;padding:14px;border-radius:10px;margin:10px 0;cursor:pointer}.box{background:#f8fafc;padding:14px;border-radius:9px;margin:10px 0}a{color:#dc2626}@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}</style></head>
 <body><header>AutoRequest</header><main>
 <section id="publicView" class="hide"><div class="card"><h1 id="firmName">Zapytanie motoryzacyjne</h1><p>Podaj samochód i napisz czego potrzebujesz.</p>
@@ -1065,6 +1065,53 @@ async function loadCustomerCars(){
 }
 
 
+function showCustomerVehicleEdit(){
+  const box=$("customerVehicleEditBox");
+  if(box)box.classList.remove("hide");
+}
+
+function hideCustomerVehicleEdit(){
+  const box=$("customerVehicleEditBox");
+  if(box)box.classList.add("hide");
+}
+
+async function saveCustomerVehicle(vehicleId){
+  const msg=$("customerVehicleEditMsg");
+  if(msg)msg.textContent="Zapisywanie...";
+
+  const body={
+    brand:$("editCarBrand").value.trim(),
+    model:$("editCarModel").value.trim(),
+    vin:$("editCarVin").value.trim(),
+    production_year:$("editCarYear").value.trim(),
+    engine_capacity:$("editCarCapacity").value.trim(),
+    engine_code:$("editCarEngineCode").value.trim(),
+    fuel:$("editCarFuel").value.trim(),
+    power:$("editCarPower").value.trim(),
+    mileage:$("editCarMileage").value.trim()
+  };
+
+  if(!body.brand || !body.model){
+    if(msg)msg.textContent="Marka i model są wymagane.";
+    return;
+  }
+
+  const r=await fetch("/api/customer/vehicles/"+vehicleId,{
+    method:"PUT",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  const d=await r.json();
+
+  if(!d.ok){
+    if(msg)msg.textContent=d.error||"Nie udało się zapisać zmian.";
+    return;
+  }
+
+  alert("Dane samochodu zostały zmienione.");
+  await openCustomerVehicleHistory(vehicleId);
+}
+
 function isOilOrFilterPart(name){
   const n=String(name||"").toLowerCase();
   return n.includes("olej") || n.includes("filtr");
@@ -1099,7 +1146,33 @@ async function openCustomerVehicleHistory(vehicleId){
       <h2 style="margin-top:0">${esc(v.brand)} ${esc(v.model)}</h2>
       <b>VIN:</b> ${esc(v.vin||"—")}<br>
       <b>Rok:</b> ${esc(v.production_year||"—")}<br>
-      <b>Silnik:</b> ${esc(v.engine_capacity||"—")} ${esc(v.engine_code||"")}
+      <b>Silnik:</b> ${esc(v.engine_capacity||"—")} ${esc(v.engine_code||"")}<br>
+      <b>Paliwo:</b> ${esc(v.fuel||"—")}<br>
+      <b>Moc:</b> ${esc(v.power||"—")}<br>
+      <b>Przebieg:</b> ${v.mileage ? esc(v.mileage)+" km" : "—"}
+      <div style="margin-top:14px">
+        <button type="button" onclick="showCustomerVehicleEdit(${vehicleId})">EDYTUJ SAMOCHÓD</button>
+      </div>
+    </div>
+
+    <div id="customerVehicleEditBox" class="box hide">
+      <h3>Edytuj samochód</h3>
+      <div class="grid">
+        <div><label>Marka *</label><input id="editCarBrand" value="${esc(v.brand||"")}"></div>
+        <div><label>Model *</label><input id="editCarModel" value="${esc(v.model||"")}"></div>
+        <div><label>VIN</label><input id="editCarVin" value="${esc(v.vin||"")}"></div>
+        <div><label>Rok produkcji</label><input id="editCarYear" type="number" value="${esc(v.production_year||"")}"></div>
+        <div><label>Pojemność silnika</label><input id="editCarCapacity" value="${esc(v.engine_capacity||"")}"></div>
+        <div><label>Kod silnika</label><input id="editCarEngineCode" value="${esc(v.engine_code||"")}"></div>
+        <div><label>Paliwo</label><input id="editCarFuel" value="${esc(v.fuel||"")}"></div>
+        <div><label>Moc</label><input id="editCarPower" value="${esc(v.power||"")}"></div>
+        <div><label>Przebieg</label><input id="editCarMileage" type="number" min="0" value="${esc(v.mileage||"")}"></div>
+        <div class="full" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" onclick="saveCustomerVehicle(${vehicleId})">ZAPISZ ZMIANY</button>
+          <button type="button" class="dark" onclick="hideCustomerVehicleEdit()">ANULUJ</button>
+        </div>
+      </div>
+      <p id="customerVehicleEditMsg"></p>
     </div>
 
     <h3>Historia pojazdu</h3>
