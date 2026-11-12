@@ -563,6 +563,36 @@ if(url.pathname==="/api/customer/vehicles" && request.method==="POST"){
   return json({ok:true,vehicle_id:r.meta.last_row_id},201);
 }
 
+// 2b. Edycja samochodu zalogowanego klienta
+if(/^\/api\/customer\/vehicles\/\d+$/.test(url.pathname) && request.method==="PUT"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+  const vehicleId=Number(url.pathname.split("/").pop());
+  const owned=await env.DB.prepare("SELECT id FROM vehicles WHERE id=? AND customer_id=? LIMIT 1").bind(vehicleId,u.customer_id).first();
+  if(!owned)return json({ok:false,error:"Nie znaleziono samochodu na Twoim koncie."},404);
+
+  const b=await request.json(),brand=clean(b.brand),model=clean(b.model);
+  if(!brand||!model)return json({ok:false,error:"Marka i model są wymagane."},400);
+
+  const year=clean(b.production_year);
+  if(year!==null){
+    const y=Number(year),maxYear=new Date().getFullYear()+1;
+    if(!Number.isInteger(y)||y<1886||y>maxYear)return json({ok:false,error:"Podaj prawidłowy rok produkcji."},400);
+  }
+  const mileage=clean(b.mileage);
+  if(mileage!==null){
+    const m=Number(mileage);
+    if(!Number.isFinite(m)||m<0)return json({ok:false,error:"Przebieg nie może być ujemny."},400);
+  }
+
+  await env.DB.prepare(`UPDATE vehicles SET brand=?,model=?,vin=?,production_year=?,engine_capacity=?,engine_code=?,fuel=?,power=?,mileage=? WHERE id=? AND customer_id=?`).bind(
+    brand,model,clean(b.vin),year===null?null:Number(year),clean(b.engine_capacity),clean(b.engine_code),clean(b.fuel),clean(b.power),mileage===null?null:Number(mileage),vehicleId,u.customer_id
+  ).run();
+
+  const vehicle=await env.DB.prepare(`SELECT id,brand,model,vin,production_year,engine_capacity,engine_code,fuel,power,mileage FROM vehicles WHERE id=? AND customer_id=?`).bind(vehicleId,u.customer_id).first();
+  return json({ok:true,vehicle});
+}
+
 // 3. Zapytanie o część dla WYBRANEGO samochodu klienta
 if(url.pathname==="/api/customer/requests" && request.method==="POST"){
   const u=await customerAuth(request,env);
