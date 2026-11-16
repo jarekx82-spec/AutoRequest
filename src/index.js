@@ -473,10 +473,14 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
    const own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
 
-   await env.DB.prepare(`
-     UPDATE messages SET read_by_business_at=CURRENT_TIMESTAMP
-     WHERE request_id=? AND sender_type='CUSTOMER' AND read_by_business_at IS NULL
-   `).bind(id).run();
+   const previewOnly=url.searchParams.get("preview")==="1";
+
+   if(!previewOnly){
+     await env.DB.prepare(`
+       UPDATE messages SET read_by_business_at=CURRENT_TIMESTAMP
+       WHERE request_id=? AND sender_type='CUSTOMER' AND read_by_business_at IS NULL
+     `).bind(id).run();
+   }
 
    const m=await env.DB.prepare("SELECT * FROM messages WHERE request_id=? ORDER BY id ASC").bind(id).all();
    return json({ok:true,messages:m.results});
