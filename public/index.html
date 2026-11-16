@@ -615,14 +615,20 @@ ${d.serviceHistory && d.serviceHistory.length
 
   for(const x of d.requests){
     try{
-      rows.push(`
-        <div class="job" onclick="openMessageThread(${x.id})">
-          <b>${esc(x.customer_name)}</b><br>
-          ${esc(x.brand)} ${esc(x.model)}<br>
-          <small>${esc(x.request_number)}</small><br>
-          <span>${esc(x.description || "")}</span>
-        </div>
-      `);
+      const mr = await fetch("/api/company/requests/" + x.id + "/messages?preview=1");
+      const md = await mr.json();
+
+      if(md.ok && md.messages && md.messages.length){
+        const last = md.messages[md.messages.length - 1];
+        rows.push(`
+          <div class="job" onclick="openMessageThread(${x.id})">
+            <b>${esc(x.customer_name)}</b><br>
+            ${esc(x.brand)} ${esc(x.model)}<br>
+            <small>${esc(x.request_number)}</small><br>
+            <span>${esc(last.message || "")}</span>
+          </div>
+        `);
+      }
     }catch(e){}
   }
 
