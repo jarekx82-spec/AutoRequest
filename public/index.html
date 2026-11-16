@@ -183,7 +183,7 @@
 <section id="panelView" class="hide">
   <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;">
   <button type="button" onclick="showPanelTab('requests')">ZAPYTANIA</button>
-  <button type="button" class="dark" onclick="showPanelTab('messages')">WIADOMOŚCI</button>
+  <button type="button" class="dark" onclick="showPanelTab('messages')">WIADOMOŚCI <span id="businessUnreadBadge" class="hide" style="min-width:22px;padding:2px 7px;margin-left:5px;border-radius:999px;background:#dc2626;color:#fff;text-align:center;">0</span></button>
   <button type="button" class="dark" onclick="showPanelTab('history')">HISTORIA ZAMÓWIEŃ</button>
   <button type="button" class="dark" onclick="showPanelTab('customers')">KLIENCI</button>
 </div>
@@ -634,6 +634,7 @@ ${d.serviceHistory && d.serviceHistory.length
 
   const mr = await fetch("/api/company/requests/" + id + "/messages");
   const md = await mr.json();
+   await loadBusinessUnreadCount();
 
   const box = $("messageChatMessages");
 
@@ -674,7 +675,23 @@ ${d.serviceHistory && d.serviceHistory.length
     alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
   }
 }
-function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs()}
+function openPanel(u){show("panelView");$("panelName").textContent="Panel — "+u.name;let l=location.origin+"/firma/"+u.slug;$("clientLink").href=l;$("clientLink").textContent=l;loadJobs();loadBusinessUnreadCount();startBusinessUnreadPolling()}
+let businessUnreadTimer=null;
+async function loadBusinessUnreadCount(){
+  const badge=$("businessUnreadBadge"); if(!badge)return;
+  try{
+    const r=await fetch("/api/company/messages/unread-count");
+    if(r.status===401)return;
+    const d=await r.json(),count=Number(d.unread_count||0);
+    badge.textContent=String(count);
+    if(d.ok&&count>0){badge.classList.remove("hide");badge.style.display="inline-block";}
+    else{badge.classList.add("hide");badge.style.display="none";}
+  }catch(e){}
+}
+function startBusinessUnreadPolling(){
+  if(businessUnreadTimer)clearInterval(businessUnreadTimer);
+  businessUnreadTimer=setInterval(loadBusinessUnreadCount,15000);
+}
 async function logout(){await fetch("/api/logout",{method:"POST"});location.href="/panel"}
 async function loadJobs(){let r=await fetch("/api/company/requests");if(r.status===401){location.href="/panel";return}let d=await r.json();$("jobs").innerHTML=d.requests.length?d.requests.filter(x=>x.status==="NEW").map(x=>`<div class=job onclick=openJob(${x.id})><b>${esc(x.request_number)}</b> — ${esc(x.status)}<br>${esc(x.brand)} ${esc(x.model)}<br>${esc(x.description)}</div>`).join(""):"Brak zleceń."}
 let current=0;async function openJob(id){current=id;$("requestChat").classList.add("hide");$("messageChat").classList.add("hide");let r=await fetch("/api/company/requests/"+id),d=await r.json(),x=d.request;$("jobCard").classList.remove("hide");$("job").innerHTML=`<div class=box><b>${esc(x.request_number)}</b><br>Klient: ${esc(x.customer_name)} — ${esc(x.customer_phone)}<br><br><b>Samochód:</b> ${esc(x.brand)} ${esc(x.model)}<br>VIN: ${esc(x.vin||"—")}<br>Rok: ${esc(x.production_year||"—")}<br>Silnik: ${esc(x.engine_capacity||"—")} ${esc(x.engine_code||"")}<br>Przebieg: ${esc(x.mileage||"—")} km<br><br><b>Zapytanie:</b><br>${esc(x.description)}</div>`;$("answer").classList.remove("hide");$("offerItemsEditor").innerHTML="";addOfferItemRow();}
