@@ -595,34 +595,47 @@ ${d.serviceHistory && d.serviceHistory.length
   const threads = $("messageThreads");
   const chat = $("messageChat");
 
-  // Po ponownym wejściu w zakładkę WIADOMOŚCI pokaż listę rozmów
-  // i schowaj wcześniej otwartą rozmowę.
   if(threads) threads.classList.remove("hide");
   if(chat) chat.classList.add("hide");
 
   const r = await fetch("/api/company/requests");
-
   if(r.status === 401){
     location.href = "/panel";
     return;
   }
 
   const d = await r.json();
-
   if(!d.ok || !d.requests || !d.requests.length){
     threads.innerHTML = "Brak rozmów.";
     return;
   }
 
-  threads.innerHTML = d.requests.map(x => `
-    <div class="job" onclick="openMessageThread(${x.id})">
-      <b>${esc(x.customer_name)}</b><br>
-      ${esc(x.brand)} ${esc(x.model)}<br>
-      <small>${esc(x.request_number)}</small>
-    </div>
-  `).join("");
+  threads.innerHTML = "Ładowanie rozmów...";
+  const rows = [];
+
+  for(const x of d.requests){
+    try{
+      const mr = await fetch("/api/company/requests/" + x.id + "/messages");
+      const md = await mr.json();
+
+      if(md.ok && md.messages && md.messages.length){
+        const last = md.messages[md.messages.length - 1];
+        rows.push(`
+          <div class="job" onclick="openMessageThread(${x.id})">
+            <b>${esc(x.customer_name)}</b><br>
+            ${esc(x.brand)} ${esc(x.model)}<br>
+            <small>${esc(x.request_number)}</small><br>
+            <span>${esc(last.message || "")}</span>
+          </div>
+        `);
+      }
+    }catch(e){}
+  }
+
+  threads.innerHTML = rows.length ? rows.join("") : "Brak rozmów.";
 }
- async function openMessageThread(id){
+
+async function openMessageThread(id){
   current = id;
    $("jobCard").classList.add("hide");
    $("answer").classList.add("hide");
