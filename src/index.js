@@ -684,6 +684,23 @@ if(url.pathname==="/api/customer/requests" && request.method==="GET"){
   return json({ok:true,requests:r.results});
 }
 
+// Licznik nieprzeczytanych wiadomości od firmy dla zalogowanego klienta
+if(url.pathname==="/api/customer/messages/unread-count" && request.method==="GET"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const r=await env.DB.prepare(`
+    SELECT COUNT(*) AS unread_count
+    FROM messages m
+    JOIN requests r ON r.id=m.request_id
+    WHERE r.customer_id=?
+      AND m.sender_type='BUSINESS'
+      AND m.read_by_customer_at IS NULL
+  `).bind(u.customer_id).first();
+
+  return json({ok:true,unread_count:Number(r?.unread_count||0)});
+}
+
 // Wiadomosci klienta - tylko do jego wlasnego zapytania
 if(/^\/api\/customer\/requests\/\d+\/messages$/.test(url.pathname)){
   const u=await customerAuth(request,env);
@@ -691,10 +708,27 @@ if(/^\/api\/customer\/requests\/\d+\/messages$/.test(url.pathname)){
   const requestId=Number(url.pathname.split("/")[4]);
   const owned=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND customer_id=? LIMIT 1").bind(requestId,u.customer_id).first();
   if(!owned)return json({ok:false,error:"Nie znaleziono zapytania."},404);
+
   if(request.method==="GET"){
-    const m=await env.DB.prepare("SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC").bind(requestId).all();
+    const previewOnly=url.searchParams.get("preview")==="1";
+
+    if(!previewOnly){
+      await env.DB.prepare(`
+        UPDATE messages
+        SET read_by_customer_at=CURRENT_TIMESTAMP
+        WHERE request_id=?
+          AND sender_type='BUSINESS'
+          AND read_by_customer_at IS NULL
+      `).bind(requestId).run();
+    }
+
+    const m=await env.DB.prepare(
+      "SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC"
+    ).bind(requestId).all();
+
     return json({ok:true,messages:m.results});
   }
+
   if(request.method==="POST"){
     const body=await request.json(),message=clean(body.message);
     if(!message)return json({ok:false,error:"Wiadomosc nie moze byc pusta."},400);
