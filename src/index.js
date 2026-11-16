@@ -176,33 +176,6 @@ export default{async fetch(request,env){
     {"Set-Cookie":`ar_customer_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`}
   );
 }
-
-  // Rejestracja urządzenia klienta do powiadomień Web Push
-  if(url.pathname==="/api/customer/push-subscriptions" && request.method==="POST"){
-    const u=await customerAuth(request,env);
-    if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-    const b=await request.json();
-    const endpoint=clean(b.endpoint);
-    const p256dh=clean(b.p256dh);
-    const authKey=clean(b.auth);
-
-    if(!endpoint || !p256dh || !authKey){
-      return json({ok:false,error:"Niepełne dane subskrypcji push."},400);
-    }
-
-    await env.DB.prepare(`
-      INSERT INTO push_subscriptions(customer_id,endpoint,p256dh,auth)
-      VALUES(?,?,?,?)
-      ON CONFLICT(endpoint) DO UPDATE SET
-        customer_id=excluded.customer_id,
-        p256dh=excluded.p256dh,
-        auth=excluded.auth
-    `).bind(u.customer_id,endpoint,p256dh,authKey).run();
-
-    return json({ok:true});
-  }
-
   if(url.pathname==="/api/customer/me" && request.method==="GET"){
   const u=await customerAuth(request,env);
 
@@ -712,6 +685,38 @@ if(url.pathname==="/api/customer/requests" && request.method==="GET"){
 }
 
 // Licznik nieprzeczytanych wiadomości od firmy dla zalogowanego klienta
+// WEB PUSH - zapis subskrypcji zalogowanego klienta
+if(url.pathname==="/api/customer/push-subscription" && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  let b;
+  try{
+    b=await request.json();
+  }catch(e){
+    return json({ok:false,error:"Nieprawidłowe dane subskrypcji."},400);
+  }
+
+  const endpoint=clean(b?.endpoint);
+  const p256dh=clean(b?.keys?.p256dh || b?.p256dh);
+  const authKey=clean(b?.keys?.auth || b?.auth);
+
+  if(!endpoint || !p256dh || !authKey){
+    return json({ok:false,error:"Brak wymaganych danych subskrypcji push."},400);
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO push_subscriptions(customer_id,endpoint,p256dh,auth)
+    VALUES(?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      customer_id=excluded.customer_id,
+      p256dh=excluded.p256dh,
+      auth=excluded.auth
+  `).bind(u.customer_id,endpoint,p256dh,authKey).run();
+
+  return json({ok:true});
+}
+
 if(url.pathname==="/api/customer/messages/unread-count" && request.method==="GET"){
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
