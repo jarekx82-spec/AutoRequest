@@ -67,7 +67,7 @@
         <h1 style="margin-bottom:5px;">Panel klienta</h1>
         <p id="customerPanelName" style="margin-top:0;">Twoje konto AutoRequest</p>
       </div>
-      <button type="button" class="dark" onclick="customerLogout()">WYLOGUJ</button>
+      <button type="button" class="dark" onclick="customerLogout()">WYLOGUJ</button><button type="button" id="enablePushButton" class="dark" onclick="enableCustomerPushNotifications()">🔔 WŁĄCZ POWIADOMIENIA</button>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
       <button type="button" id="customerTabCars" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
@@ -840,6 +840,27 @@ async function sendMessage(){
     alert("Nie udało się wysłać wiadomości: " + (d.error || "błąd"));
   }
 }
+const VAPID_PUBLIC_KEY="BGR1fL6sg-QMDARSlgrmqXrTpAgsYhXhTqB01p152s8XtGDw6epSMfaV6fJwigwDL-v-jLJ4tpD6z8Wr7eC9bSY";
+function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),r=atob(b);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
+async function enableCustomerPushNotifications(){
+ const btn=$("enablePushButton");
+ try{
+  if(!("serviceWorker" in navigator)||!("PushManager" in window))throw new Error("Ta przeglądarka nie obsługuje Web Push.");
+  if(await Notification.requestPermission()!=="granted")throw new Error("Nie udzielono zgody na powiadomienia.");
+  const reg=await navigator.serviceWorker.register("/sw.js"); await navigator.serviceWorker.ready;
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+  const j=sub.toJSON();
+  const r=await fetch("/api/customer/push-subscriptions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys?.p256dh,auth:j.keys?.auth})});
+  const d=await r.json(); if(!d.ok)throw new Error(d.error||"Nie udało się zapisać urządzenia.");
+  btn.textContent="🔔 POWIADOMIENIA WŁĄCZONE"; btn.disabled=true;
+  alert("Powiadomienia na tym urządzeniu zostały włączone.");
+ }catch(e){alert("Nie udało się włączyć powiadomień: "+e.message);}
+}
+async function refreshCustomerPushButton(){
+ const btn=$("enablePushButton"); if(!btn||!("serviceWorker" in navigator)||Notification.permission!=="granted")return;
+ try{const reg=await navigator.serviceWorker.getRegistration();const sub=reg?await reg.pushManager.getSubscription():null;if(sub){btn.textContent="🔔 POWIADOMIENIA WŁĄCZONE";btn.disabled=true;}}catch(e){}
+}
 function openCustomerPanel(user){
   show("customerPanelView");
   const name = user && (user.name || user.email || user.phone)
@@ -850,6 +871,7 @@ function openCustomerPanel(user){
   loadCustomerReminders();
   loadCustomerUnreadCount();
   startCustomerUnreadPolling();
+  refreshCustomerPushButton();
 }
 
 let customerUnreadTimer=null;
