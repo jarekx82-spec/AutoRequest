@@ -71,7 +71,7 @@
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:15px 0;">
       <button type="button" id="customerTabCars" onclick="showCustomerSection('cars')">MOJE SAMOCHODY</button>
-      <button type="button" id="customerTabRequests" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA</button>
+      <button type="button" id="customerTabRequests" onclick="showCustomerSection('requests')">MOJE ZAPYTANIA <span id="customerUnreadBadge" class="hide" style="min-width:22px;padding:2px 7px;margin-left:5px;border-radius:999px;background:#dc2626;color:#fff;text-align:center;">0</span></button>
       <button type="button" id="customerTabRequest" onclick="showCustomerSection('request')">NOWE ZAPYTANIE O TOWAR</button>
       <button type="button" id="customerTabReminders" onclick="showCustomerSection('reminders')">🔔 MOJE PRZYPOMNIENIA</button>
     </div>
@@ -848,6 +848,33 @@ function openCustomerPanel(user){
   $("customerPanelName").textContent = "Witaj, " + name + ".";
   showCustomerSection("cars");
   loadCustomerReminders();
+  loadCustomerUnreadCount();
+  startCustomerUnreadPolling();
+}
+
+let customerUnreadTimer=null;
+async function loadCustomerUnreadCount(){
+  const badge=$("customerUnreadBadge");
+  if(!badge)return;
+  try{
+    const r=await fetch("/api/customer/messages/unread-count");
+    if(r.status===401)return;
+    const d=await r.json();
+    const count=Number(d.unread_count||0);
+    badge.textContent=String(count);
+    if(d.ok && count>0){
+      badge.classList.remove("hide");
+      badge.style.display="inline-block";
+    }else{
+      badge.classList.add("hide");
+      badge.style.display="none";
+    }
+  }catch(e){}
+}
+
+function startCustomerUnreadPolling(){
+  if(customerUnreadTimer)clearInterval(customerUnreadTimer);
+  customerUnreadTimer=setInterval(loadCustomerUnreadCount,15000);
 }
 
 
@@ -961,7 +988,7 @@ async function loadCustomerRequests(){
 async function openCustomerConversation(id,num){
   customerConversationRequestId=id;
   $("customerRequestsList").classList.add("hide"); $("customerConversation").classList.remove("hide");
-  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages(); await loadCustomerOffer(); await loadCustomerOfferItems();
+  $("customerConversationTitle").textContent="Rozmowa — "+num; await loadCustomerConversationMessages(); await loadCustomerUnreadCount(); await loadCustomerOffer(); await loadCustomerOfferItems();
 }
 function closeCustomerConversation(){ customerConversationRequestId=0; $("customerConversation").classList.add("hide"); $("customerRequestsList").classList.remove("hide"); }
 async function loadCustomerConversationMessages(){
