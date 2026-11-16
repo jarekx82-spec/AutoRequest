@@ -592,6 +592,14 @@ ${d.serviceHistory && d.serviceHistory.length
 }  
   
   async function loadMessageThreads(){
+  const threads = $("messageThreads");
+  const chat = $("messageChat");
+
+  // Po ponownym wejściu w zakładkę WIADOMOŚCI pokaż listę rozmów
+  // i schowaj wcześniej otwartą rozmowę.
+  if(threads) threads.classList.remove("hide");
+  if(chat) chat.classList.add("hide");
+
   const r = await fetch("/api/company/requests");
 
   if(r.status === 401){
@@ -601,12 +609,12 @@ ${d.serviceHistory && d.serviceHistory.length
 
   const d = await r.json();
 
-  if(!d.ok || !d.requests.length){
-    $("messageThreads").innerHTML = "Brak rozmów.";
+  if(!d.ok || !d.requests || !d.requests.length){
+    threads.innerHTML = "Brak rozmów.";
     return;
   }
 
-  $("messageThreads").innerHTML = d.requests.map(x => `
+  threads.innerHTML = d.requests.map(x => `
     <div class="job" onclick="openMessageThread(${x.id})">
       <b>${esc(x.customer_name)}</b><br>
       ${esc(x.brand)} ${esc(x.model)}<br>
