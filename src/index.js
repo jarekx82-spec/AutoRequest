@@ -29,11 +29,6 @@ async function customerAuth(req,env){
   `).bind(t).first();
 }
 export default{async fetch(request,env){
- webpush.setVapidDetails(
-  "mailto:admin@autorequest.pl",
-  env.VAPID_PUBLIC_KEY,
-  env.VAPID_PRIVATE_KEY
-);
  const url=new URL(request.url);
  try{
   if(url.pathname==="/api/health")return json({ok:true,version:"MVP v3"});
@@ -720,6 +715,32 @@ if(url.pathname==="/api/customer/push-subscription" && request.method==="POST"){
   `).bind(u.customer_id,endpoint,p256dh,authKey).run();
 
   return json({ok:true});
+}
+
+// WEB PUSH - zapis urzadzenia klienta
+if(url.pathname==="/api/customer/push-subscriptions" && request.method==="POST"){
+  const u=await customerAuth(request,env);
+  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
+
+  const b=await request.json();
+  const endpoint=b?.endpoint;
+  const p256dh=b?.keys?.p256dh;
+  const authKey=b?.keys?.auth;
+
+  if(!endpoint || !p256dh || !authKey){
+    return json({ok:false,error:"Nieprawidlowa subskrypcja push."},400);
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO push_subscriptions(customer_id,endpoint,p256dh,auth)
+    VALUES(?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      customer_id=excluded.customer_id,
+      p256dh=excluded.p256dh,
+      auth=excluded.auth
+  `).bind(u.customer_id,endpoint,p256dh,authKey).run();
+
+  return json({ok:true},201);
 }
 
 if(url.pathname==="/api/customer/messages/unread-count" && request.method==="GET"){
