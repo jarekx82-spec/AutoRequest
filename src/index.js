@@ -29,6 +29,11 @@ async function customerAuth(req,env){
   `).bind(t).first();
 }
 export default{async fetch(request,env){
+ webpush.setVapidDetails(
+  "mailto:admin@autorequest.pl",
+  env.VAPID_PUBLIC_KEY,
+  env.VAPID_PRIVATE_KEY
+);
  const url=new URL(request.url);
  try{
   if(url.pathname==="/api/health")return json({ok:true,version:"MVP v3"});
