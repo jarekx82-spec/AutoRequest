@@ -504,7 +504,7 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
    const u=await auth(request,env);
    if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
    const id=Number(url.pathname.split("/")[4]);
-   const own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
+   const own=await env.DB.prepare("SELECT id,customer_id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
 
    const previewOnly=url.searchParams.get("preview")==="1";
