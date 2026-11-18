@@ -1,3 +1,4 @@
+import webpush from "web-push";
 const json=(d,s=200,h={})=>new Response(JSON.stringify(d),{status:s,headers:{"content-type":"application/json; charset=UTF-8",...h}});
 const clean=v=>v==null||String(v).trim()===""?null:String(v).trim();
 const hex=a=>[...new Uint8Array(a)].map(b=>b.toString(16).padStart(2,"0")).join("");
@@ -28,6 +29,39 @@ async function customerAuth(req,env){
       AND cu.active=1
   `).bind(t).first();
 }
+
+async function sendCustomerPush(env,customerId,payload){
+  if(!customerId || !env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY)return;
+
+  webpush.setVapidDetails(
+    "https://autorequest1.jarekx82.workers.dev",
+    env.VAPID_PUBLIC_KEY,
+    env.VAPID_PRIVATE_KEY
+  );
+
+  const rows=await env.DB.prepare(`
+    SELECT id,endpoint,p256dh,auth
+    FROM push_subscriptions
+    WHERE customer_id=?
+  `).bind(customerId).all();
+
+  for(const s of rows.results||[]){
+    try{
+      await webpush.sendNotification(
+        {endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},
+        JSON.stringify(payload)
+      );
+    }catch(e){
+      const status=Number(e?.statusCode||e?.status||0);
+      if(status===404 || status===410){
+        await env.DB.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(s.id).run();
+      }else{
+        console.error("Web Push error:",e);
+      }
+    }
+  }
+}
+
 export default{async fetch(request,env){
  const url=new URL(request.url);
  try{
@@ -425,7 +459,7 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
   }
   if(/^\/api\/company\/requests\/\d+\/response$/.test(url.pathname)&&request.method==="POST"){
    const u=await auth(request,env); if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-   const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
+   const id=Number(url.pathname.split("/")[4]),own=await env.DB.prepare("SELECT id,customer_id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
    if(!own)return json({ok:false,error:"Brak dostępu."},403);
    const b=await request.json();
    const items=Array.isArray(b.items)?b.items:[];
@@ -492,7 +526,7 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
   const id=Number(url.pathname.split("/")[4]);
 
   const own=await env.DB.prepare(
-    "SELECT id FROM requests WHERE id=? AND business_id=?"
+    "SELECT id,customer_id FROM requests WHERE id=? AND business_id=?"
   ).bind(id,u.business_id).first();
 
   if(!own)return json({ok:false,error:"Brak dostępu."},403);
@@ -506,6 +540,12 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
   await env.DB.prepare(
     "INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)"
   ).bind(id,"BUSINESS",u.id,message).run();
+
+  await sendCustomerPush(env,own.customer_id,{
+    title:"AutoRequest - nowa wiadomość",
+    body:message,
+    url:"/klient"
+  });
 
   return json({ok:true},201);
 }
@@ -684,18 +724,14 @@ if(url.pathname==="/api/customer/requests" && request.method==="GET"){
   return json({ok:true,requests:r.results});
 }
 
-// Licznik nieprzeczytanych wiadomości od firmy dla zalogowanego klienta
 // WEB PUSH - zapis subskrypcji zalogowanego klienta
-if(url.pathname==="/api/customer/push-subscription" && request.method==="POST"){
+if(url.pathname==="/api/customer/push-subscriptions" && request.method==="POST"){
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
 
   let b;
-  try{
-    b=await request.json();
-  }catch(e){
-    return json({ok:false,error:"Nieprawidłowe dane subskrypcji."},400);
-  }
+  try{ b=await request.json(); }
+  catch(e){ return json({ok:false,error:"Nieprawidłowe dane subskrypcji."},400); }
 
   const endpoint=clean(b?.endpoint);
   const p256dh=clean(b?.keys?.p256dh || b?.p256dh);
@@ -714,35 +750,10 @@ if(url.pathname==="/api/customer/push-subscription" && request.method==="POST"){
       auth=excluded.auth
   `).bind(u.customer_id,endpoint,p256dh,authKey).run();
 
-  return json({ok:true});
-}
-
-// WEB PUSH - zapis urzadzenia klienta
-if(url.pathname==="/api/customer/push-subscriptions" && request.method==="POST"){
-  const u=await customerAuth(request,env);
-  if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
-
-  const b=await request.json();
-  const endpoint=b?.endpoint;
-  const p256dh=b?.keys?.p256dh;
-  const authKey=b?.keys?.auth;
-
-  if(!endpoint || !p256dh || !authKey){
-    return json({ok:false,error:"Nieprawidlowa subskrypcja push."},400);
-  }
-
-  await env.DB.prepare(`
-    INSERT INTO push_subscriptions(customer_id,endpoint,p256dh,auth)
-    VALUES(?,?,?,?)
-    ON CONFLICT(endpoint) DO UPDATE SET
-      customer_id=excluded.customer_id,
-      p256dh=excluded.p256dh,
-      auth=excluded.auth
-  `).bind(u.customer_id,endpoint,p256dh,authKey).run();
-
   return json({ok:true},201);
 }
 
+// Licznik nieprzeczytanych wiadomości od firmy dla zalogowanego klienta
 if(url.pathname==="/api/customer/messages/unread-count" && request.method==="GET"){
   const u=await customerAuth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
@@ -1155,11 +1166,18 @@ if(/^\/api\/company\/requests\/\d+\/complete$/.test(url.pathname) && request.met
   const u=await auth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
   const id=Number(url.pathname.split("/")[4]);
-  const req=await env.DB.prepare("SELECT id,status FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
+  const req=await env.DB.prepare("SELECT id,status,customer_id FROM requests WHERE id=? AND business_id=?").bind(id,u.business_id).first();
   if(!req)return json({ok:false,error:"Brak dostępu."},403);
   if(req.status!=="CONFIRMED")return json({ok:false,error:"Najpierw klient musi potwierdzić zakup."},400);
   await env.DB.prepare("UPDATE requests SET status='COMPLETED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();
   await env.DB.prepare("INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)").bind(id,"BUSINESS",u.id,"Zamówienie zostało zrealizowane.").run();
+
+  await sendCustomerPush(env,req.customer_id,{
+    title:"AutoRequest - zamówienie zrealizowane",
+    body:"Zamówienie zostało zrealizowane.",
+    url:"/klient"
+  });
+
   return json({ok:true,status:"COMPLETED"});
 }
 
