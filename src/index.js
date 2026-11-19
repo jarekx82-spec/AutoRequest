@@ -284,24 +284,6 @@ if(customer){
 
  return json({ok:true},201);
 }
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="GET"){
-  const id=Number(url.pathname.split("/")[4]);
-
-  const r=await env.DB.prepare(
-    "SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC"
-  ).bind(id).all();
-
-  return json({ok:true,messages:r.results});
-}
-  if(/^\/api\/public\/requests\/\d+\/messages$/.test(url.pathname) && request.method==="GET"){
-  const id=Number(url.pathname.split("/")[4]);
-
-  const r=await env.DB.prepare(
-    "SELECT id,sender_type,message,created_at FROM messages WHERE request_id=? ORDER BY id ASC"
-  ).bind(id).all();
-
-  return json({ok:true,messages:r.results});
-}
   if(url.pathname==="/api/company/customers" && request.method==="GET"){
   const u=await auth(request,env);
   if(!u)return json({ok:false,error:"Brak autoryzacji."},401);
@@ -403,6 +385,7 @@ if(/^\/api\/company\/customers\/\d+$/.test(url.pathname) && request.method==="DE
   const users=await env.DB.prepare("SELECT id FROM customer_users WHERE customer_id=?").bind(id).all();
   for(const x of users.results)await env.DB.prepare("DELETE FROM customer_sessions WHERE user_id=?").bind(x.id).run();
   await env.DB.prepare("DELETE FROM customer_users WHERE customer_id=?").bind(id).run();
+  await env.DB.prepare("DELETE FROM push_subscriptions WHERE customer_id=?").bind(id).run();
   await env.DB.prepare("DELETE FROM service_history WHERE vehicle_id IN (SELECT id FROM vehicles WHERE customer_id=?)").bind(id).run();
   await env.DB.prepare("DELETE FROM vehicles WHERE customer_id=?").bind(id).run();
   await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(id).run();
@@ -481,7 +464,15 @@ if(/^\/api\/company\/vehicles\/\d+$/.test(url.pathname) && request.method==="GET
    if(clean(b.note)){
      await env.DB.prepare("INSERT INTO messages(request_id,sender_type,sender_id,message) VALUES(?,?,?,?)").bind(id,"BUSINESS",u.id,clean(b.note)).run();
    }
+
    await env.DB.prepare("UPDATE requests SET status='ANSWERED',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(id).run();
+
+   await sendCustomerPush(env,own.customer_id,{
+     title:"AutoRequest - nowa oferta",
+     body:clean(b.note) || "Firma odpowiedziała na Twoje zapytanie. Otwórz AutoRequest, aby zobaczyć ofertę.",
+     url:"/klient"
+   });
+
    return json({ok:true});
   }
   if(/^\/api\/company\/requests\/\d+$/.test(url.pathname)&&request.method==="GET"){
